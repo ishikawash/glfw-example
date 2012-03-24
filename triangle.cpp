@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/string_cast.hpp>
 
 #include <GL/glfw.h>
 
@@ -20,6 +21,7 @@ struct drawable_t {
 
 struct attribute_handle_t {
   GLuint position;
+  GLuint normal;
   GLuint color;
 };
 
@@ -27,6 +29,8 @@ struct uniform_handle_t {
   GLuint projection_matrix;
   GLuint view_matrix;
   GLuint model_matrix;
+  GLuint normal_matrix;
+  GLuint light_position;
 };
 
 GLuint build_shader(const char *source, GLenum shader_type)
@@ -119,9 +123,14 @@ int main(void)
     {5.0f, 0.0f, -4.0f},
     {0.0f, 0.0f, 6.0f}
   };
+  float normals[][3] = {
+    {0.0f, -1.0f, 0.0f},
+    {0.0f, -1.0f, 0.0f},
+    {0.0f, -1.0f, 0.0f}
+  };
   float colors[][3] = {
-    {1.0f, 0.0f, 0.0f},
-    {0.0f, 1.0f, 0.0f},
+    {0.0f, 0.0f, 1.0f},
+    {0.0f, 0.0f, 1.0f},
     {0.0f, 0.0f, 1.0f}
   };
   unsigned int face_count = 1;
@@ -133,9 +142,10 @@ int main(void)
   drawable_t drawable;
   glGenBuffers(1, &drawable.vertex_buffer_handle);
   glBindBuffer(GL_ARRAY_BUFFER, drawable.vertex_buffer_handle);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices) + sizeof(colors), NULL, GL_STATIC_DRAW); // pointer to data must be NULL
+  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices) + sizeof(normals) + sizeof(colors), NULL, GL_STATIC_DRAW); // pointer to data must be NULL
   glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
-  glBufferSubData(GL_ARRAY_BUFFER, sizeof(vertices), sizeof(colors), colors);
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(vertices), sizeof(normals), normals);
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(vertices) + sizeof(normals), sizeof(colors), colors);
 
   glGenBuffers(1, &drawable.index_buffer_handle);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, drawable.index_buffer_handle);
@@ -153,20 +163,27 @@ int main(void)
 
   attribute_handle_t attribute;
   attribute.position = glGetAttribLocation(program_handle, "position");
+  attribute.normal = glGetAttribLocation(program_handle, "normal");
   attribute.color = glGetAttribLocation(program_handle, "color");
   glEnableVertexAttribArray(attribute.position);
+  glEnableVertexAttribArray(attribute.normal);
   glEnableVertexAttribArray(attribute.color);
 
   uniform_handle_t uniform;
   uniform.projection_matrix = glGetUniformLocation(program_handle, "projection_matrix");
   uniform.view_matrix = glGetUniformLocation(program_handle, "view_matrix");
   uniform.model_matrix = glGetUniformLocation(program_handle, "model_matrix");
+  uniform.normal_matrix = glGetUniformLocation(program_handle, "normal_matrix");
+  uniform.light_position = glGetUniformLocation(program_handle, "light_position");
 
   glm::vec3 eye(0.0f, 1.0f, 0.0f);
   glm::vec3 center(0.0f, 20.0f, 0.0f);
   glm::vec3 up(0.0f, 0.0f, 1.0f);
   glm::mat4 view_matrix = glm::lookAt(eye, center, up); // from world to camera
   glUniformMatrix4fv(uniform.view_matrix, 1, 0, glm::value_ptr(view_matrix));
+
+  glm::vec3 light_position(0.0f); // light position in world space
+  glUniform3fv(uniform.light_position, 1, glm::value_ptr(light_position));
 
   do {
     t = glfwGetTime();
@@ -188,11 +205,15 @@ int main(void)
     glm::mat4 model_translation = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 14.0f, 0.0f));
     glm::mat4 model_rotation = glm::rotate(glm::mat4(1.0f), theta, glm::vec3(0.0f, 0.0f, 1.0f));
     glm::mat4 model_matrix = model_translation * model_rotation; // from local to world
+    glm::mat3 normal_matrix = glm::mat3(model_matrix); // upper 3x3 matrix of model matrix
     glUniformMatrix4fv(uniform.model_matrix, 1, 0, glm::value_ptr(model_matrix));
+    glUniformMatrix3fv(uniform.normal_matrix, 1, 0, glm::value_ptr(normal_matrix));
 
+    GLsizei stride = 3 * sizeof(float);
     glBindBuffer(GL_ARRAY_BUFFER, drawable.vertex_buffer_handle);
-    glVertexAttribPointer(attribute.position, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
-    glVertexAttribPointer(attribute.color, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), BUFFER_OFFSET(sizeof(vertices)));
+    glVertexAttribPointer(attribute.position, 3, GL_FLOAT, GL_FALSE, stride, 0);
+    glVertexAttribPointer(attribute.normal, 3, GL_FLOAT, GL_FALSE, stride, BUFFER_OFFSET(sizeof(vertices)));
+    glVertexAttribPointer(attribute.color, 3, GL_FLOAT, GL_FALSE, stride, BUFFER_OFFSET(sizeof(vertices) + sizeof(normals)));
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, drawable.index_buffer_handle);
     glDrawElements(GL_TRIANGLES, face_count * 3, GL_UNSIGNED_INT, BUFFER_OFFSET(0));
