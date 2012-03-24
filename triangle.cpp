@@ -15,7 +15,6 @@
 
 struct drawable_t {
   GLuint vertex_buffer_handle;
-  GLuint color_buffer_handle;
   GLuint index_buffer_handle;
 };
 
@@ -134,10 +133,10 @@ int main(void)
   drawable_t drawable;
   glGenBuffers(1, &drawable.vertex_buffer_handle);
   glBindBuffer(GL_ARRAY_BUFFER, drawable.vertex_buffer_handle);
-  glBufferData(GL_ARRAY_BUFFER, (vertex_count * 3) * sizeof(float), vertices, GL_STATIC_DRAW);
-  glGenBuffers(1, &drawable.color_buffer_handle);
-  glBindBuffer(GL_ARRAY_BUFFER, drawable.color_buffer_handle);
-  glBufferData(GL_ARRAY_BUFFER, (vertex_count * 3) * sizeof(float), colors, GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices) + sizeof(colors), NULL, GL_STATIC_DRAW); // pointer to data must be NULL
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(vertices), sizeof(colors), colors);
+
   glGenBuffers(1, &drawable.index_buffer_handle);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, drawable.index_buffer_handle);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, index_count * sizeof(unsigned int), faces, GL_STATIC_DRAW);
@@ -193,8 +192,8 @@ int main(void)
 
     glBindBuffer(GL_ARRAY_BUFFER, drawable.vertex_buffer_handle);
     glVertexAttribPointer(attribute.position, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
-    glBindBuffer(GL_ARRAY_BUFFER, drawable.color_buffer_handle);
-    glVertexAttribPointer(attribute.color, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
+    glVertexAttribPointer(attribute.color, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), BUFFER_OFFSET(sizeof(vertices)));
+
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, drawable.index_buffer_handle);
     glDrawElements(GL_TRIANGLES, face_count * 3, GL_UNSIGNED_INT, BUFFER_OFFSET(0));
 
