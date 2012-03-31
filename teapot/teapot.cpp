@@ -176,6 +176,9 @@ int main(int argc, char **args)
   size_t indice_buffer_size = mesh.indices.size() * sizeof(unsigned int);
 
   drawable_t drawable;
+	drawable.vertex_count = mesh.vertices.size() / 3;
+	drawable.index_count = mesh.indices.size();
+	
   glGenBuffers(1, &drawable.vertex_buffer_handle);
   glBindBuffer(GL_ARRAY_BUFFER, drawable.vertex_buffer_handle);
   glBufferData(GL_ARRAY_BUFFER, vertex_buffer_size, &mesh.vertices[0], GL_STATIC_DRAW);
@@ -267,7 +270,7 @@ int main(int argc, char **args)
     glEnableVertexAttribArray(attribute.position);
     glEnableVertexAttribArray(attribute.normal);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, drawable.index_buffer_handle);
-    glDrawElements(GL_TRIANGLES, mesh.indices.size(), GL_UNSIGNED_INT, BUFFER_OFFSET(0));
+    glDrawElements(GL_TRIANGLES, drawable.index_count, GL_UNSIGNED_INT, BUFFER_OFFSET(0));
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
     glDisableVertexAttribArray(attribute.normal);
     glDisableVertexAttribArray(attribute.position);
