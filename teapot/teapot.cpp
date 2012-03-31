@@ -45,6 +45,16 @@ struct uniform_handle_t {
   GLuint material_color;
 };
 
+struct trackball_state_t {
+	glm::ivec2 center_position;
+	glm::ivec2 prev_position;
+	glm::quat orientation;
+	float radius;
+	bool dragged;
+};
+
+trackball_state_t trackball_state;
+
 GLuint build_shader(const char *source, GLenum shader_type)
 {
   GLuint shader_handle = glCreateShader(shader_type);
@@ -141,12 +151,71 @@ bool load_mesh(const char *ctm_filepath, mesh_t & mesh)
   }
 }
 
+glm::vec3 map_to_sphere(const trackball_state_t &tb_state, const glm::ivec2 &point) 
+{
+    glm::vec2 p(point.x - tb_state.center_position.x, point.y - tb_state.center_position.y);
+    
+    p.y = -p.y;
+    
+    const float radius = tb_state.radius;
+    const float safe_radius = radius - 1.0f;
+    
+    if (glm::length(p) > safe_radius) {
+        float theta = std::atan2(p.y, p.x);
+        p.x = safe_radius * std::cos(theta);
+        p.y = safe_radius * std::sin(theta);
+    }
+    
+		float length_squared = p.x*p.x + p.y*p.y;
+    float z = std::sqrt(radius * radius - length_squared);
+    glm::vec3 q = glm::vec3(p.x, p.y, z);
+		return glm::normalize(q / radius);
+}
+
+void mouse(int button, int action) {
+	if (( button == GLFW_MOUSE_BUTTON_LEFT )) {
+		switch (action) {
+			case GLFW_PRESS:
+				glfwGetMousePos(&trackball_state.prev_position.x, &trackball_state.prev_position.y);
+				trackball_state.dragged = true;
+				break;
+			case GLFW_RELEASE:
+				trackball_state.dragged = false;
+				break;
+		}
+	}
+}
+
+void motion(int x, int y) {
+	if (! trackball_state.dragged)
+		return;
+	
+	glm::ivec2 current_position(x, y);
+	glm::vec3 v0 = map_to_sphere(trackball_state, trackball_state.prev_position);
+	glm::vec3 v1 = map_to_sphere(trackball_state, current_position);
+	glm::vec3 v2 = glm::cross(v0, v1); // calculate rotation axis
+	
+	float d = glm::dot(v0, v1);
+	float s = std::sqrt((1.0f + d) * 2.0f);
+	glm::quat q(0.5f * s, v2 / s);
+	trackball_state.orientation = q * trackball_state.orientation;
+	trackball_state.orientation /= glm::length(trackball_state.orientation);
+		
+	trackball_state.prev_position = current_position;
+}
+
 int main(int argc, char **args)
 {
   const char *ctm_filepath = (argc > 1) ? args[1] : "teapot.ctm";
 
-  int width, height, x;
-  double t;
+	trackball_state.radius = 300.0f;
+	trackball_state.dragged = false;
+	trackball_state.orientation.w = 1.0f;
+	trackball_state.orientation.x = 0.0f;
+	trackball_state.orientation.y = 0.0f;
+	trackball_state.orientation.z = 0.0f;
+
+  int width, height;
 
   if (!glfwInit()) {
     std::cerr << "Failed to initialize GLFW" << std::endl;
@@ -156,15 +225,13 @@ int main(int argc, char **args)
   int depth_bits = 16;
   if (!glfwOpenWindow(640, 480, 0, 0, 0, 0, depth_bits, 0, GLFW_WINDOW)) {
     std::cerr << "Failed to open GLFW window" << std::endl;
-
     glfwTerminate();
     exit(EXIT_FAILURE);
   }
-
+	glfwSetMouseButtonCallback(mouse);
+	glfwSetMousePosCallback(motion);
   glfwSetWindowTitle("Spinning Teapot");
-
   glfwEnable(GLFW_STICKY_KEYS);
-
   glfwSwapInterval(1);
 
   mesh_t mesh;
@@ -233,25 +300,24 @@ int main(int argc, char **args)
   glCullFace(GL_BACK);
 
   do {
-    t = glfwGetTime();
-    glfwGetMousePos(&x, NULL);
-
     glfwGetWindowSize(&width, &height);
+
+    height = height > 0 ? height : 1;
+		
+		trackball_state.center_position.x = 0.5 * width;
+		trackball_state.center_position.y = 0.5 * height;
+
 
     glClearColor(0.5f, 0.5f, 0.5f, 0.0f);
     glClearDepth(1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    height = height > 0 ? height : 1;
-
+		
     glViewport(0, 0, width, height);
 
     glm::mat4 projection_matrix = glm::perspective(60.0f, (float) width / (float) height, 1.0f, 30.0f);
     glUniformMatrix4fv(uniform.projection_matrix, 1, 0, glm::value_ptr(projection_matrix));
 
-    float theta = 0.3f * (float) x + (float) t * 100.0f;
-    // glm::mat4 model_translation = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 14.0f, 0.0f));
-    glm::mat4 model_rotation = glm::rotate(glm::mat4(1.0f), theta, glm::vec3(0.0f, 1.0f, 0.0f));
+		glm::mat4 model_rotation = glm::mat4_cast(trackball_state.orientation);
     glm::mat4 model_matrix = model_rotation; // from local to world
     glUniformMatrix4fv(uniform.model_matrix, 1, 0, glm::value_ptr(model_matrix));
 
