@@ -20,12 +20,14 @@ struct mesh_t {
   std::vector<float> vertices;
   std::vector<float> normals;
   std::vector<unsigned int> indices;
+	std::vector<float> tex_coords;
 };
 
 struct drawable_t {
   GLuint vertex_buffer_handle;
   GLuint normal_buffer_handle;
   GLuint index_buffer_handle;
+	GLuint tex_coord_buffer_handle;
 
   unsigned int vertex_count;
   unsigned int index_count;
@@ -34,6 +36,7 @@ struct drawable_t {
 struct attribute_handle_t {
   GLuint position;
   GLuint normal;
+	GLuint tex_coord;
 };
 
 struct uniform_handle_t {
@@ -43,6 +46,7 @@ struct uniform_handle_t {
   GLuint normal_matrix;
   GLuint light_direction;
   GLuint material_color;
+	GLuint texture0;
 };
 
 struct trackball_state_t {
@@ -143,6 +147,16 @@ bool load_mesh(const char *ctm_filepath, mesh_t & mesh)
       std::cerr << "*** CTM_HAS_NORMALS == false" << std::endl;
     }
 
+		unsigned int uv_map_count = ctm.GetInteger(CTM_UV_MAP_COUNT);
+		if (uv_map_count > 0){
+			const CTMfloat *tex_coords = ctm.GetFloatArray(CTM_UV_MAP_1);
+			unsigned int tex_coord_element_count = 2 * vertex_count;
+			mesh.tex_coords.resize(tex_coord_element_count);
+			std::memcpy(&mesh.tex_coords[0], tex_coords, tex_coord_element_count * sizeof(float));
+		} else {
+			std::cerr << "*** UV map not found" << std::endl;
+		}
+
     return true;
   }
   catch(ctm_error & e) {
@@ -238,9 +252,12 @@ int main(int argc, char **args)
   if (!load_mesh(ctm_filepath, mesh)) {
     exit(EXIT_FAILURE);
   }
+
+	//--- Buffers
   size_t vertex_buffer_size = mesh.vertices.size() * sizeof(float);
   size_t normal_buffer_size = mesh.normals.size() * sizeof(float);
   size_t indice_buffer_size = mesh.indices.size() * sizeof(unsigned int);
+	size_t tex_coord_buffer_size = mesh.tex_coords.size() * sizeof(float);
 
   drawable_t drawable;
 	drawable.vertex_count = mesh.vertices.size() / 3;
@@ -261,12 +278,35 @@ int main(int argc, char **args)
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, indice_buffer_size, &mesh.indices[0], GL_STATIC_DRAW);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
+  glGenBuffers(1, &drawable.tex_coord_buffer_handle);
+  glBindBuffer(GL_ARRAY_BUFFER, drawable.tex_coord_buffer_handle);
+  glBufferData(GL_ARRAY_BUFFER, tex_coord_buffer_size, &mesh.tex_coords[0], GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+	//--- Texture
+	const char *texture_filepath = "checker.tga";
+	GLuint texture_id;
+	glGenTextures(1, &texture_id);
+	glBindTexture(GL_TEXTURE_2D, texture_id);
+	if( !glfwLoadTexture2D( texture_filepath, GLFW_BUILD_MIPMAPS_BIT ) ) {
+		std::cout << "Failed to load texture: " << texture_filepath << std::endl;
+		glfwTerminate();
+		exit(EXIT_FAILURE);
+	}
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	//--- Shader
   std::string vertex_shader_source;
   std::string fragment_shader_source;
   read_shader_source("simple.vs", vertex_shader_source);
   read_shader_source("simple.fs", fragment_shader_source);
   GLuint program_handle = build_program(vertex_shader_source, fragment_shader_source);
   if (!program_handle) {
+		glfwTerminate();
     exit(EXIT_FAILURE);
   }
   glUseProgram(program_handle);
@@ -274,6 +314,7 @@ int main(int argc, char **args)
   attribute_handle_t attribute;
   attribute.position = glGetAttribLocation(program_handle, "position");
   attribute.normal = glGetAttribLocation(program_handle, "normal");
+	attribute.tex_coord = glGetAttribLocation(program_handle, "tex_coord");
 
   uniform_handle_t uniform;
   uniform.projection_matrix = glGetUniformLocation(program_handle, "projection_matrix");
@@ -282,6 +323,7 @@ int main(int argc, char **args)
   uniform.normal_matrix = glGetUniformLocation(program_handle, "normal_matrix");
   uniform.light_direction = glGetUniformLocation(program_handle, "light_direction");
   uniform.material_color = glGetUniformLocation(program_handle, "material_color");
+	uniform.texture0 = glGetUniformLocation(program_handle, "texture0");
 
   glm::vec3 eye(0.0f, 0.0f, 5.0f);
   glm::vec3 center(0.0f, 0.0f, 0.0f);
@@ -295,6 +337,9 @@ int main(int argc, char **args)
   glm::vec3 material_color(0.0f, 0.0f, 1.0f);
   glUniform3fv(uniform.material_color, 1, glm::value_ptr(material_color));
 
+	glUniform1i(uniform.texture0, 0); // use texture unit 0
+
+	//--- Renering Modes
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_CULL_FACE);
   glCullFace(GL_BACK);
@@ -314,7 +359,7 @@ int main(int argc, char **args)
 		
     glViewport(0, 0, width, height);
 
-    glm::mat4 projection_matrix = glm::perspective(60.0f, (float) width / (float) height, 1.0f, 30.0f);
+    glm::mat4 projection_matrix = glm::perspective(10.0f, (float) width / (float) height, 1.0f, 30.0f);
     glUniformMatrix4fv(uniform.projection_matrix, 1, 0, glm::value_ptr(projection_matrix));
 
 		glm::mat4 model_rotation = glm::mat4_cast(trackball_state.orientation);
@@ -333,13 +378,23 @@ int main(int argc, char **args)
     glVertexAttribPointer(attribute.normal, 3, GL_FLOAT, GL_FALSE, stride, BUFFER_OFFSET(0));
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+    glBindBuffer(GL_ARRAY_BUFFER, drawable.tex_coord_buffer_handle);
+    glVertexAttribPointer(attribute.tex_coord, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), BUFFER_OFFSET(0));
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, texture_id);
     glEnableVertexAttribArray(attribute.position);
     glEnableVertexAttribArray(attribute.normal);
+		glEnableVertexAttribArray(attribute.tex_coord);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, drawable.index_buffer_handle);
     glDrawElements(GL_TRIANGLES, drawable.index_count, GL_UNSIGNED_INT, BUFFER_OFFSET(0));
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+		glDisableVertexAttribArray(attribute.tex_coord);
     glDisableVertexAttribArray(attribute.normal);
     glDisableVertexAttribArray(attribute.position);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glActiveTexture(0);
 
     glfwSwapBuffers();
 
