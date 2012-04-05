@@ -57,6 +57,8 @@ struct trackball_state_t {
 	bool dragged;
 };
 
+float camera_fovy = 30.0f;
+bool camera_zoom = false;
 trackball_state_t trackball_state;
 
 GLuint build_shader(const char *source, GLenum shader_type)
@@ -187,7 +189,7 @@ glm::vec3 map_to_sphere(const trackball_state_t &tb_state, const glm::ivec2 &poi
 }
 
 void mouse(int button, int action) {
-	if (( button == GLFW_MOUSE_BUTTON_LEFT )) {
+	if ( button == GLFW_MOUSE_BUTTON_LEFT ) {
 		switch (action) {
 			case GLFW_PRESS:
 				glfwGetMousePos(&trackball_state.prev_position.x, &trackball_state.prev_position.y);
@@ -198,31 +200,45 @@ void mouse(int button, int action) {
 				break;
 		}
 	}
+	
 }
 
 void motion(int x, int y) {
 	if (! trackball_state.dragged)
 		return;
-	
+
 	glm::ivec2 current_position(x, y);
-	glm::vec3 v0 = map_to_sphere(trackball_state, trackball_state.prev_position);
-	glm::vec3 v1 = map_to_sphere(trackball_state, current_position);
-	glm::vec3 v2 = glm::cross(v0, v1); // calculate rotation axis
+	camera_zoom = ( glfwGetKey(GLFW_KEY_LSHIFT) == GLFW_PRESS );
 	
-	float d = glm::dot(v0, v1);
-	float s = std::sqrt((1.0f + d) * 2.0f);
-	glm::quat q(0.5f * s, v2 / s);
-	trackball_state.orientation = q * trackball_state.orientation;
-	trackball_state.orientation /= glm::length(trackball_state.orientation);
-		
-	trackball_state.prev_position = current_position;
+	if (camera_zoom) {
+		glm::vec2 v(trackball_state.prev_position.x - current_position.x, trackball_state.prev_position.y - current_position.y);	
+		float delta = glm::length(v);
+		if (delta > 0.0f) {
+			float direction = glm::sign(glm::dot(v, glm::vec2(0.0f, 1.0f)));
+			float theta = direction * glm::clamp(delta, 0.1f, 0.5f);		
+			camera_fovy = glm::clamp(camera_fovy + theta, 5.0f, 60.0f);
+		}		
+	} else {
+		glm::vec3 v0 = map_to_sphere(trackball_state, trackball_state.prev_position);
+		glm::vec3 v1 = map_to_sphere(trackball_state, current_position);
+		glm::vec3 v2 = glm::cross(v0, v1); // calculate rotation axis
+
+		float d = glm::dot(v0, v1);
+		float s = std::sqrt((1.0f + d) * 2.0f);
+		glm::quat q(0.5f * s, v2 / s);
+		trackball_state.orientation = q * trackball_state.orientation;
+		trackball_state.orientation /= glm::length(trackball_state.orientation);		
+	}
+
+	trackball_state.prev_position.x = x;
+	trackball_state.prev_position.y = y;
 }
 
 int main(int argc, char **args)
 {
   const char *ctm_filepath = (argc > 1) ? args[1] : "teapot.ctm";
 
-	trackball_state.radius = 300.0f;
+	trackball_state.radius = 150.0f;
 	trackball_state.dragged = false;
 	trackball_state.orientation.w = 1.0f;
 	trackball_state.orientation.x = 0.0f;
@@ -359,7 +375,7 @@ int main(int argc, char **args)
 		
     glViewport(0, 0, width, height);
 
-    glm::mat4 projection_matrix = glm::perspective(10.0f, (float) width / (float) height, 1.0f, 30.0f);
+    glm::mat4 projection_matrix = glm::perspective(camera_fovy, (float) width / (float) height, 1.0f, 30.0f);
     glUniformMatrix4fv(uniform.projection_matrix, 1, 0, glm::value_ptr(projection_matrix));
 
 		glm::mat4 model_rotation = glm::mat4_cast(trackball_state.orientation);
