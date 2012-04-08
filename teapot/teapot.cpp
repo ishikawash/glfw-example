@@ -215,7 +215,6 @@ void motion(int x, int y) {
 		return;
 
 	glm::ivec2 current_position(x, y);
-	camera_zoom = ( glfwGetKey(GLFW_KEY_LSHIFT) == GLFW_PRESS );
 	
 	if (camera_zoom) {
 		glm::vec2 v(trackball_state.prev_position.x - current_position.x, trackball_state.prev_position.y - current_position.y);	
@@ -249,6 +248,19 @@ void resize(int width, int height){
 	trackball_state.center_position.y = 0.5 * height;
 }
 
+void keyboard(int key, int action) {
+	switch (action) {
+		case GLFW_PRESS:
+			if (key == GLFW_KEY_LSHIFT) {
+				camera_zoom = true;
+			}
+			break;
+		case GLFW_RELEASE:
+			camera_zoom = false;
+			break;
+	}
+}
+
 int main(int argc, char **args)
 {
   const char *ctm_filepath = (argc > 1) ? args[1] : "teapot.ctm";
@@ -273,6 +285,7 @@ int main(int argc, char **args)
   }
 	glfwGetWindowSize(&screen.width, &screen.height);
 	glfwSetWindowSizeCallback(resize);
+	glfwSetKeyCallback(keyboard);
 	glfwSetMouseButtonCallback(mouse);
 	glfwSetMousePosCallback(motion);
   glfwSetWindowTitle("Spinning Teapot");
