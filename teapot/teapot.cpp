@@ -57,9 +57,16 @@ struct trackball_state_t {
 	bool dragged;
 };
 
+struct screen_t {
+	int width;
+	int height;
+};
+
 float camera_fovy = 30.0f;
 bool camera_zoom = false;
+screen_t screen;
 trackball_state_t trackball_state;
+
 
 GLuint build_shader(const char *source, GLenum shader_type)
 {
@@ -234,6 +241,14 @@ void motion(int x, int y) {
 	trackball_state.prev_position.y = y;
 }
 
+void resize(int width, int height){
+  height = height > 0 ? height : 1;
+	screen.width = width;
+	screen.height = height;
+	trackball_state.center_position.x = 0.5 * width;
+	trackball_state.center_position.y = 0.5 * height;
+}
+
 int main(int argc, char **args)
 {
   const char *ctm_filepath = (argc > 1) ? args[1] : "teapot.ctm";
@@ -244,8 +259,6 @@ int main(int argc, char **args)
 	trackball_state.orientation.x = 0.0f;
 	trackball_state.orientation.y = 0.0f;
 	trackball_state.orientation.z = 0.0f;
-
-  int width, height;
 
   if (!glfwInit()) {
     std::cerr << "Failed to initialize GLFW" << std::endl;
@@ -258,6 +271,8 @@ int main(int argc, char **args)
     glfwTerminate();
     exit(EXIT_FAILURE);
   }
+	glfwGetWindowSize(&screen.width, &screen.height);
+	glfwSetWindowSizeCallback(resize);
 	glfwSetMouseButtonCallback(mouse);
 	glfwSetMousePosCallback(motion);
   glfwSetWindowTitle("Spinning Teapot");
@@ -361,21 +376,13 @@ int main(int argc, char **args)
   glCullFace(GL_BACK);
 
   do {
-    glfwGetWindowSize(&width, &height);
-
-    height = height > 0 ? height : 1;
-		
-		trackball_state.center_position.x = 0.5 * width;
-		trackball_state.center_position.y = 0.5 * height;
-
-
     glClearColor(0.5f, 0.5f, 0.5f, 0.0f);
     glClearDepth(1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		
-    glViewport(0, 0, width, height);
+    glViewport(0, 0, screen.width, screen.height);
 
-    glm::mat4 projection_matrix = glm::perspective(camera_fovy, (float) width / (float) height, 1.0f, 30.0f);
+    glm::mat4 projection_matrix = glm::perspective(camera_fovy, (float) screen.width / (float) screen.height, 1.0f, 30.0f);
     glUniformMatrix4fv(uniform.projection_matrix, 1, 0, glm::value_ptr(projection_matrix));
 
 		glm::mat4 model_rotation = glm::mat4_cast(trackball_state.orientation);
