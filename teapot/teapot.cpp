@@ -57,14 +57,9 @@ struct trackball_state_t {
 	bool dragged;
 };
 
-struct screen_t {
-	int width;
-	int height;
-};
-
 float camera_fovy = 30.0f;
 bool camera_zoom = false;
-screen_t screen;
+int screen_width, screen_height;
 trackball_state_t trackball_state;
 
 
@@ -242,8 +237,8 @@ void motion(int x, int y) {
 
 void resize(int width, int height){
   height = height > 0 ? height : 1;
-	screen.width = width;
-	screen.height = height;
+	screen_width = width;
+	screen_height = height;
 	trackball_state.center_position.x = 0.5 * width;
 	trackball_state.center_position.y = 0.5 * height;
 }
@@ -283,7 +278,7 @@ int main(int argc, char **args)
     glfwTerminate();
     exit(EXIT_FAILURE);
   }
-	glfwGetWindowSize(&screen.width, &screen.height);
+	glfwGetWindowSize(&screen_width, &screen_height);
 	glfwSetWindowSizeCallback(resize);
 	glfwSetKeyCallback(keyboard);
 	glfwSetMouseButtonCallback(mouse);
@@ -393,15 +388,14 @@ int main(int argc, char **args)
     glClearDepth(1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		
-    glViewport(0, 0, screen.width, screen.height);
+    glViewport(0, 0, screen_width, screen_height);
 
-    glm::mat4 projection_matrix = glm::perspective(camera_fovy, (float) screen.width / (float) screen.height, 1.0f, 30.0f);
+    glm::mat4 projection_matrix = glm::perspective(camera_fovy, (float) screen_width / (float) screen_height, 1.0f, 30.0f);
     glUniformMatrix4fv(uniform.projection_matrix, 1, 0, glm::value_ptr(projection_matrix));
 
 		glm::mat4 model_rotation = glm::mat4_cast(trackball_state.orientation);
     glm::mat4 model_matrix = model_rotation; // from local to world
     glUniformMatrix4fv(uniform.model_matrix, 1, 0, glm::value_ptr(model_matrix));
-
     glm::mat3 normal_matrix = glm::mat3(model_matrix); // upper 3x3 matrix of model matrix
     glUniformMatrix3fv(uniform.normal_matrix, 1, 0, glm::value_ptr(normal_matrix));
 
