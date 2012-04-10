@@ -368,7 +368,7 @@ int main(int argc, char **args)
   glm::vec3 center(0.0f, 0.0f, 0.0f);
   glm::vec3 up(0.0f, 1.0f, 0.0f);
   glm::mat4 view_matrix = glm::lookAt(eye, center, up); // from world to camera
-  glUniformMatrix4fv(uniform.view_matrix, 1, 0, glm::value_ptr(view_matrix));
+  // glUniformMatrix4fv(uniform.view_matrix, 1, 0, glm::value_ptr(view_matrix));
 
   glm::vec3 light_direction = glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f)); // light direction in world space
   glUniform3fv(uniform.light_direction, 1, glm::value_ptr(light_direction));
@@ -393,8 +393,10 @@ int main(int argc, char **args)
     glm::mat4 projection_matrix = glm::perspective(camera_fovy, (float) screen_width / (float) screen_height, 1.0f, 30.0f);
     glUniformMatrix4fv(uniform.projection_matrix, 1, 0, glm::value_ptr(projection_matrix));
 
-		glm::mat4 model_rotation = glm::mat4_cast(trackball_state.orientation);
-    glm::mat4 model_matrix = model_rotation; // from local to world
+		glm::mat4 rotation = glm::mat4_cast(trackball_state.orientation);
+		glUniformMatrix4fv(uniform.view_matrix, 1, 0, glm::value_ptr(view_matrix * rotation));
+
+		glm::mat4 model_matrix(1.0f);
     glUniformMatrix4fv(uniform.model_matrix, 1, 0, glm::value_ptr(model_matrix));
     glm::mat3 normal_matrix = glm::mat3(model_matrix); // upper 3x3 matrix of model matrix
     glUniformMatrix3fv(uniform.normal_matrix, 1, 0, glm::value_ptr(normal_matrix));
