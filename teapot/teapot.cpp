@@ -14,6 +14,8 @@
 #include <openctmpp.h>
 #include <GL/glfw.h>
 
+#include "shader.hpp"
+
 #define BUFFER_OFFSET(bytes) ((GLubyte *)NULL + (bytes))
 
 struct mesh_t {
@@ -37,16 +39,6 @@ struct attribute_handle_t {
   GLuint position;
   GLuint normal;
 	GLuint tex_coord;
-};
-
-struct uniform_handle_t {
-  GLuint projection_matrix;
-  GLuint view_matrix;
-  GLuint model_matrix;
-  GLuint normal_matrix;
-  GLuint light_direction;
-  GLuint material_color;
-	GLuint texture0;
 };
 
 struct trackball_state_t {
@@ -84,20 +76,23 @@ GLuint build_shader(const char *source, GLenum shader_type)
 
 GLuint build_program(const std::string & vertex_shader_source, const std::string & fragment_shader_source)
 {
-  GLuint vertex_shader_handle = build_shader(vertex_shader_source.c_str(), GL_VERTEX_SHADER);
-  if (!vertex_shader_handle) {
-    std::cerr << "*** compile vertex shader failed" << std::endl;
-    return 0;
-  }
-  GLuint fragment_shader_handle = build_shader(fragment_shader_source.c_str(), GL_FRAGMENT_SHADER);
-  if (!fragment_shader_handle) {
-    std::cerr << "*** compile fragment shader failed" << std::endl;
-    return 0;
-  }
+	shader_t vertex_shader(GL_VERTEX_SHADER);
+	if (! vertex_shader.compile(vertex_shader_source.c_str()) ) {
+		std::cerr << "*** compile vertex shader failed" << std::endl;
+		std::cerr << vertex_shader.log() << std::endl;
+		return 0;
+	}
+	
+	shader_t fragment_shader(GL_FRAGMENT_SHADER);
+	if (! fragment_shader.compile(fragment_shader_source.c_str()) ) {
+		std::cerr << "*** compile fragment shader failed" << std::endl;
+		std::cerr << fragment_shader.log() << std::endl;
+		return 0;
+	}
 
   GLuint program_handle = glCreateProgram();
-  glAttachShader(program_handle, vertex_shader_handle);
-  glAttachShader(program_handle, fragment_shader_handle);
+  glAttachShader(program_handle, vertex_shader.handle());
+  glAttachShader(program_handle, fragment_shader.handle());
   glLinkProgram(program_handle);
 
   GLint link_success;
@@ -339,44 +334,38 @@ int main(int argc, char **args)
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	//--- Shader
-  std::string vertex_shader_source;
-  std::string fragment_shader_source;
-  read_shader_source("simple.vs", vertex_shader_source);
-  read_shader_source("simple.fs", fragment_shader_source);
-  GLuint program_handle = build_program(vertex_shader_source, fragment_shader_source);
-  if (!program_handle) {
+	shader_program_t shader_program;
+	if (! shader_program.add_shader_from_source_file(GL_VERTEX_SHADER, "simple.vs") ) {
+		std::cerr << shader_program.log() << std::endl;
 		glfwTerminate();
-    exit(EXIT_FAILURE);
-  }
-  glUseProgram(program_handle);
+		exit(EXIT_FAILURE);
+	}
+	if (! shader_program.add_shader_from_source_file(GL_FRAGMENT_SHADER, "simple.fs") ) {
+		std::cerr << shader_program.log() << std::endl;
+		glfwTerminate();
+		exit(EXIT_FAILURE);		
+	}
+	if (! shader_program.link()) {
+		std::cerr << shader_program.log() << std::endl;
+		glfwTerminate();
+    exit(EXIT_FAILURE);		
+	}
+	shader_program.bind();
 
   attribute_handle_t attribute;
-  attribute.position = glGetAttribLocation(program_handle, "position");
-  attribute.normal = glGetAttribLocation(program_handle, "normal");
-	attribute.tex_coord = glGetAttribLocation(program_handle, "tex_coord");
-
-  uniform_handle_t uniform;
-  uniform.projection_matrix = glGetUniformLocation(program_handle, "projection_matrix");
-  uniform.view_matrix = glGetUniformLocation(program_handle, "view_matrix");
-  uniform.model_matrix = glGetUniformLocation(program_handle, "model_matrix");
-  uniform.normal_matrix = glGetUniformLocation(program_handle, "normal_matrix");
-  uniform.light_direction = glGetUniformLocation(program_handle, "light_direction");
-  uniform.material_color = glGetUniformLocation(program_handle, "material_color");
-	uniform.texture0 = glGetUniformLocation(program_handle, "texture0");
+	attribute.position = shader_program.attribute_location("position");
+	attribute.normal = shader_program.attribute_location("normal");
+	attribute.tex_coord = shader_program.attribute_location("tex_coord");
 
   glm::vec3 eye(0.0f, 0.0f, 5.0f);
   glm::vec3 center(0.0f, 0.0f, 0.0f);
   glm::vec3 up(0.0f, 1.0f, 0.0f);
   glm::mat4 view_matrix = glm::lookAt(eye, center, up); // from world to camera
-  // glUniformMatrix4fv(uniform.view_matrix, 1, 0, glm::value_ptr(view_matrix));
 
   glm::vec3 light_direction = glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f)); // light direction in world space
-  glUniform3fv(uniform.light_direction, 1, glm::value_ptr(light_direction));
-
-  glm::vec3 material_color(0.0f, 0.0f, 1.0f);
-  glUniform3fv(uniform.material_color, 1, glm::value_ptr(material_color));
-
-	glUniform1i(uniform.texture0, 0); // use texture unit 0
+	shader_program.set_uniform_value("light_direction", light_direction);
+	
+	shader_program.set_uniform_value("texture0", 0); // use texture unit 0
 
 	//--- Renering Modes
   glEnable(GL_DEPTH_TEST);
@@ -391,15 +380,14 @@ int main(int argc, char **args)
     glViewport(0, 0, screen_width, screen_height);
 
     glm::mat4 projection_matrix = glm::perspective(camera_fovy, (float) screen_width / (float) screen_height, 1.0f, 30.0f);
-    glUniformMatrix4fv(uniform.projection_matrix, 1, 0, glm::value_ptr(projection_matrix));
-
 		glm::mat4 rotation = glm::mat4_cast(trackball_state.orientation);
-		glUniformMatrix4fv(uniform.view_matrix, 1, 0, glm::value_ptr(view_matrix * rotation));
-
 		glm::mat4 model_matrix(1.0f);
-    glUniformMatrix4fv(uniform.model_matrix, 1, 0, glm::value_ptr(model_matrix));
     glm::mat3 normal_matrix = glm::mat3(model_matrix); // upper 3x3 matrix of model matrix
-    glUniformMatrix3fv(uniform.normal_matrix, 1, 0, glm::value_ptr(normal_matrix));
+
+		shader_program.set_uniform_value("projection_matrix", projection_matrix);
+		shader_program.set_uniform_value("view_matrix", view_matrix * rotation);
+		shader_program.set_uniform_value("model_matrix", model_matrix);
+		shader_program.set_uniform_value("normal_matrix", normal_matrix);
 
     GLsizei stride = 3 * sizeof(float);
     glBindBuffer(GL_ARRAY_BUFFER, drawable.vertex_buffer_handle);
