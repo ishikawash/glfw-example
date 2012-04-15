@@ -25,20 +25,22 @@ struct mesh_t {
 	std::vector<float> tex_coords;
 };
 
-struct drawable_t {
-  GLuint vertex_buffer_handle;
-  GLuint normal_buffer_handle;
-  GLuint index_buffer_handle;
-	GLuint tex_coord_buffer_handle;
-
-  unsigned int vertex_count;
-  unsigned int index_count;
-};
-
-struct attribute_handle_t {
+struct vertex_attribute_handles_t {
   GLuint position;
   GLuint normal;
 	GLuint tex_coord;
+};
+
+struct teapot_t {
+	GLuint vertex_buffer_handle;
+  GLuint normal_buffer_handle;
+  GLuint index_buffer_handle;
+	GLuint tex_coord_buffer_handle;
+  unsigned int vertex_count;
+  unsigned int index_count;
+
+	shader_program_t shader_program;
+	vertex_attribute_handles_t vertex_attributes;
 };
 
 struct trackball_state_t {
@@ -187,6 +189,88 @@ void keyboard(int key, int action) {
 	}
 }
 
+#define ARRAY_BUFFER_SIZE(container, data_type)  ((container).size()*sizeof(data_type)) 
+
+bool load_teapot(const char *ctm_filepath, teapot_t &teapot) {
+	mesh_t mesh;
+  if (!load_mesh(ctm_filepath, mesh))
+		return false;
+	
+	teapot.vertex_count = mesh.vertices.size() / 3;
+	teapot.index_count = mesh.indices.size();
+	
+	//--- Buffers
+  glGenBuffers(1, &teapot.vertex_buffer_handle);
+  glBindBuffer(GL_ARRAY_BUFFER, teapot.vertex_buffer_handle);
+	glBufferData(GL_ARRAY_BUFFER, ARRAY_BUFFER_SIZE(mesh.vertices, float), &mesh.vertices[0], GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+  glGenBuffers(1, &teapot.normal_buffer_handle);
+  glBindBuffer(GL_ARRAY_BUFFER, teapot.normal_buffer_handle);
+  glBufferData(GL_ARRAY_BUFFER, ARRAY_BUFFER_SIZE(mesh.normals, float), &mesh.normals[0], GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+  glGenBuffers(1, &teapot.index_buffer_handle);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, teapot.index_buffer_handle);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, ARRAY_BUFFER_SIZE(mesh.indices, unsigned int), &mesh.indices[0], GL_STATIC_DRAW);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+  glGenBuffers(1, &teapot.tex_coord_buffer_handle);
+  glBindBuffer(GL_ARRAY_BUFFER, teapot.tex_coord_buffer_handle);
+  glBufferData(GL_ARRAY_BUFFER, ARRAY_BUFFER_SIZE(mesh.tex_coords, float), &mesh.tex_coords[0], GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);	
+
+	//--- Shader
+	if (! teapot.shader_program.add_shader_from_source_file(GL_VERTEX_SHADER, "simple.vs") ) {
+		std::cerr << teapot.shader_program.log() << std::endl;
+		return false;		
+	}
+	if (! teapot.shader_program.add_shader_from_source_file(GL_FRAGMENT_SHADER, "simple.fs") ) {
+		std::cerr << teapot.shader_program.log() << std::endl;
+		return false;
+	}
+	if (! teapot.shader_program.link()) {
+		std::cerr << teapot.shader_program.log() << std::endl;
+		return false;
+	}
+	
+	teapot.shader_program.bind();
+	teapot.vertex_attributes.position = teapot.shader_program.attribute_location("position");
+	teapot.vertex_attributes.normal = teapot.shader_program.attribute_location("normal");
+	teapot.vertex_attributes.tex_coord = teapot.shader_program.attribute_location("tex_coord");	
+	teapot.shader_program.release();
+
+	return true;
+}
+
+void draw_teapot(const teapot_t &teapot) {
+	const vertex_attribute_handles_t *vertex_attributes = &(teapot.vertex_attributes);
+	
+  GLsizei stride = 3 * sizeof(float);
+  glBindBuffer(GL_ARRAY_BUFFER, teapot.vertex_buffer_handle);
+  glVertexAttribPointer(vertex_attributes->position, 3, GL_FLOAT, GL_FALSE, stride, BUFFER_OFFSET(0));
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+  glBindBuffer(GL_ARRAY_BUFFER, teapot.normal_buffer_handle);
+  glVertexAttribPointer(vertex_attributes->normal, 3, GL_FLOAT, GL_FALSE, stride, BUFFER_OFFSET(0));
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+  glBindBuffer(GL_ARRAY_BUFFER, teapot.tex_coord_buffer_handle);
+  glVertexAttribPointer(vertex_attributes->tex_coord, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), BUFFER_OFFSET(0));
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+  glEnableVertexAttribArray(vertex_attributes->position);
+  glEnableVertexAttribArray(vertex_attributes->normal);
+	glEnableVertexAttribArray(vertex_attributes->tex_coord);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, teapot.index_buffer_handle);
+  glDrawElements(GL_TRIANGLES, teapot.index_count, GL_UNSIGNED_INT, BUFFER_OFFSET(0));
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	glDisableVertexAttribArray(vertex_attributes->tex_coord);
+  glDisableVertexAttribArray(vertex_attributes->normal);
+  glDisableVertexAttribArray(vertex_attributes->position);
+
+}
+
 int main(int argc, char **args)
 {
   const char *ctm_filepath = (argc > 1) ? args[1] : "teapot.ctm";
@@ -218,40 +302,8 @@ int main(int argc, char **args)
   glfwEnable(GLFW_STICKY_KEYS);
   glfwSwapInterval(1);
 
-  mesh_t mesh;
-  if (!load_mesh(ctm_filepath, mesh)) {
-    exit(EXIT_FAILURE);
-  }
-
-	//--- Buffers
-  size_t vertex_buffer_size = mesh.vertices.size() * sizeof(float);
-  size_t normal_buffer_size = mesh.normals.size() * sizeof(float);
-  size_t indice_buffer_size = mesh.indices.size() * sizeof(unsigned int);
-	size_t tex_coord_buffer_size = mesh.tex_coords.size() * sizeof(float);
-
-  drawable_t drawable;
-	drawable.vertex_count = mesh.vertices.size() / 3;
-	drawable.index_count = mesh.indices.size();
-	
-  glGenBuffers(1, &drawable.vertex_buffer_handle);
-  glBindBuffer(GL_ARRAY_BUFFER, drawable.vertex_buffer_handle);
-  glBufferData(GL_ARRAY_BUFFER, vertex_buffer_size, &mesh.vertices[0], GL_STATIC_DRAW);
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-  glGenBuffers(1, &drawable.normal_buffer_handle);
-  glBindBuffer(GL_ARRAY_BUFFER, drawable.normal_buffer_handle);
-  glBufferData(GL_ARRAY_BUFFER, normal_buffer_size, &mesh.normals[0], GL_STATIC_DRAW);
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-  glGenBuffers(1, &drawable.index_buffer_handle);
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, drawable.index_buffer_handle);
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, indice_buffer_size, &mesh.indices[0], GL_STATIC_DRAW);
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-
-  glGenBuffers(1, &drawable.tex_coord_buffer_handle);
-  glBindBuffer(GL_ARRAY_BUFFER, drawable.tex_coord_buffer_handle);
-  glBufferData(GL_ARRAY_BUFFER, tex_coord_buffer_size, &mesh.tex_coords[0], GL_STATIC_DRAW);
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  teapot_t teapot;
+	load_teapot(ctm_filepath, teapot);
 
 	//--- Texture
 	const char *texture_filepath = "checker.tga";
@@ -267,41 +319,17 @@ int main(int argc, char **args)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	glBindTexture(GL_TEXTURE_2D, 0);
-
-	//--- Shader
-	shader_program_t shader_program;
-	if (! shader_program.add_shader_from_source_file(GL_VERTEX_SHADER, "simple.vs") ) {
-		std::cerr << shader_program.log() << std::endl;
-		glfwTerminate();
-		exit(EXIT_FAILURE);
-	}
-	if (! shader_program.add_shader_from_source_file(GL_FRAGMENT_SHADER, "simple.fs") ) {
-		std::cerr << shader_program.log() << std::endl;
-		glfwTerminate();
-		exit(EXIT_FAILURE);		
-	}
-	if (! shader_program.link()) {
-		std::cerr << shader_program.log() << std::endl;
-		glfwTerminate();
-    exit(EXIT_FAILURE);		
-	}
-	shader_program.bind();
-
-  attribute_handle_t attribute;
-	attribute.position = shader_program.attribute_location("position");
-	attribute.normal = shader_program.attribute_location("normal");
-	attribute.tex_coord = shader_program.attribute_location("tex_coord");
+	glBindTexture(GL_TEXTURE_2D, 0);	
 
   glm::vec3 eye(0.0f, 0.0f, 5.0f);
   glm::vec3 center(0.0f, 0.0f, 0.0f);
   glm::vec3 up(0.0f, 1.0f, 0.0f);
   glm::mat4 view_matrix = glm::lookAt(eye, center, up); // from world to camera
-
   glm::vec3 light_direction = glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f)); // light direction in world space
-	shader_program.set_uniform_value("light_direction", light_direction);
-	
-	shader_program.set_uniform_value("texture0", 0); // use texture unit 0
+
+	teapot.shader_program.bind();
+	teapot.shader_program.set_uniform_value("light_direction", light_direction);	
+	teapot.shader_program.set_uniform_value("texture0", 0); // use texture unit 0
 
 	//--- Renering Modes
   glEnable(GL_DEPTH_TEST);
@@ -320,38 +348,17 @@ int main(int argc, char **args)
 		glm::mat4 model_matrix(1.0f);
     glm::mat3 normal_matrix = glm::mat3(model_matrix); // upper 3x3 matrix of model matrix
 
-		shader_program.set_uniform_value("projection_matrix", projection_matrix);
-		shader_program.set_uniform_value("view_matrix", view_matrix * rotation);
-		shader_program.set_uniform_value("model_matrix", model_matrix);
-		shader_program.set_uniform_value("normal_matrix", normal_matrix);
-
-    GLsizei stride = 3 * sizeof(float);
-    glBindBuffer(GL_ARRAY_BUFFER, drawable.vertex_buffer_handle);
-    glVertexAttribPointer(attribute.position, 3, GL_FLOAT, GL_FALSE, stride, BUFFER_OFFSET(0));
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    glBindBuffer(GL_ARRAY_BUFFER, drawable.normal_buffer_handle);
-    glVertexAttribPointer(attribute.normal, 3, GL_FLOAT, GL_FALSE, stride, BUFFER_OFFSET(0));
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    glBindBuffer(GL_ARRAY_BUFFER, drawable.tex_coord_buffer_handle);
-    glVertexAttribPointer(attribute.tex_coord, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), BUFFER_OFFSET(0));
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+		teapot.shader_program.set_uniform_value("projection_matrix", projection_matrix);
+		teapot.shader_program.set_uniform_value("view_matrix", view_matrix * rotation);
+		teapot.shader_program.set_uniform_value("model_matrix", model_matrix);
+		teapot.shader_program.set_uniform_value("normal_matrix", normal_matrix);
 
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture_id);
-    glEnableVertexAttribArray(attribute.position);
-    glEnableVertexAttribArray(attribute.normal);
-		glEnableVertexAttribArray(attribute.tex_coord);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, drawable.index_buffer_handle);
-    glDrawElements(GL_TRIANGLES, drawable.index_count, GL_UNSIGNED_INT, BUFFER_OFFSET(0));
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-		glDisableVertexAttribArray(attribute.tex_coord);
-    glDisableVertexAttribArray(attribute.normal);
-    glDisableVertexAttribArray(attribute.position);
+		draw_teapot(teapot);
 		glBindTexture(GL_TEXTURE_2D, 0);
 		glActiveTexture(0);
-
+		
     glfwSwapBuffers();
 
   }
