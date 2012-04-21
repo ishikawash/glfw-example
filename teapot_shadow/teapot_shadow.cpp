@@ -282,8 +282,8 @@ bool build_mesh_object(const mesh_t &mesh, mesh_object_t &object) {
 
 void draw_mesh_object(const mesh_object_t & object)
 {
-	GLuint position_location = object.shader_program.attribute_location("position");
-	GLuint normal_location = object.shader_program.attribute_location("normal");
+	GLuint position_location = object.shader_program.attribute_location("vertex_position");
+	GLuint normal_location = object.shader_program.attribute_location("vertex_normal");
 
   GLsizei stride = 3 * sizeof(float);
   glBindBuffer(GL_ARRAY_BUFFER, object.vertex_buffer.handle);
@@ -427,7 +427,7 @@ int main(int argc, char **args)
 		teapot.shader_program.set_uniform_value("light_position", _light_position);
 		teapot.shader_program.set_uniform_value("material.diffuse", glm::vec3(0.0f, 0.0f, 1.0f));
 		teapot.shader_program.set_uniform_value("material.specular", glm::vec3(0.8f));
-		teapot.shader_program.set_uniform_value("material.shininess", 200.0f);
+		teapot.shader_program.set_uniform_value("material.shininess", 128.0f);
 	  teapot.shader_program.set_uniform_value("texture0", 0); 
     teapot.shader_program.set_uniform_value("projection_matrix", projection_matrix);
     teapot.shader_program.set_uniform_value("view_matrix", _view_matrix);
