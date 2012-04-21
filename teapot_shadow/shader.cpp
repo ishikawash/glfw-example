@@ -180,3 +180,7 @@ void shader_program_t::set_uniform_value(const char *name, const glm::vec3 &v) c
 void shader_program_t::set_uniform_value(const char *name, int value) const {
 	glUniform1i(uniform_location(name), value);
 }
+
+void shader_program_t::set_uniform_value(const char *name, float value) const {
+	glUniform1f(uniform_location(name), value);
+}

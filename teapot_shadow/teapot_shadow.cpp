@@ -419,9 +419,15 @@ int main(int argc, char **args)
 		
     glm::mat4 projection_matrix = glm::perspective(camera_fovy, (float) screen_width / (float) screen_height, 1.0f, 30.0f);
 		glm::mat4 _view_matrix = view_matrix * rotation;
+		glm::vec3 _light_position = light_position;
+		// glm::mat4 _view_matrix = view_matrix;
+		// glm::vec3 _light_position = light_position * glm::transpose(glm::mat3(rotation));
 
 		teapot.shader_program.bind();		
-		teapot.shader_program.set_uniform_value("light_position", light_position);
+		teapot.shader_program.set_uniform_value("light_position", _light_position);
+		teapot.shader_program.set_uniform_value("material.diffuse", glm::vec3(0.0f, 0.0f, 1.0f));
+		teapot.shader_program.set_uniform_value("material.specular", glm::vec3(0.8f));
+		teapot.shader_program.set_uniform_value("material.shininess", 200.0f);
 	  teapot.shader_program.set_uniform_value("texture0", 0); 
     teapot.shader_program.set_uniform_value("projection_matrix", projection_matrix);
     teapot.shader_program.set_uniform_value("view_matrix", _view_matrix);
@@ -429,7 +435,10 @@ int main(int argc, char **args)
 		teapot.shader_program.release();
 
 		floor.shader_program.bind();		
-		floor.shader_program.set_uniform_value("light_position", light_position);
+		floor.shader_program.set_uniform_value("light_position", _light_position);
+		floor.shader_program.set_uniform_value("material.diffuse", glm::vec3(1.0f, 1.0f, 1.0f));
+		floor.shader_program.set_uniform_value("material.specular", glm::vec3(0.8f));
+		floor.shader_program.set_uniform_value("material.shininess", 2.0f);
 	  floor.shader_program.set_uniform_value("texture0", 0); 
     floor.shader_program.set_uniform_value("projection_matrix", projection_matrix);
     floor.shader_program.set_uniform_value("view_matrix", _view_matrix);
