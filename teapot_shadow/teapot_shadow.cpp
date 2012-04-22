@@ -27,13 +27,18 @@ struct mesh_t {
 
 struct texture_t {
 	GLuint handle;
-	GLuint uniform_location;
 	int unit_id;
 };
 
 struct array_buffer_t {
 	GLuint handle;
 	unsigned int count;
+};
+
+struct material_t {
+	glm::vec3 diffuse;
+	glm::vec3 specular;
+	float shininess;
 };
 
 struct mesh_object_t {
@@ -44,6 +49,7 @@ struct mesh_object_t {
   shader_program_t shader_program;
 	bool has_tex_coords;
 	std::vector<texture_t> textures;
+	material_t material;
 };
 
 struct trackball_state_t {
@@ -155,6 +161,41 @@ void keyboard(int key, int action)
     camera_zoom = false;
     break;
   }
+}
+
+bool load_mesh_plane(mesh_t &mesh) {
+	float vertices[][3] = {
+		{ -0.50, 0.00, -0.50 },
+		{ 0.50, 0.00, -0.50 },
+		{ -0.50, 0.00, 0.50 },
+		{ 0.50, 0.00, 0.50 }
+	};
+
+	float normals[][3] = {
+		{ 0.00, 1.00, 0.00 },
+		{ 0.00, 1.00, 0.00 },
+		{ 0.00, 1.00, 0.00 },
+		{ 0.00, 1.00, 0.00 }
+	};
+
+	unsigned int indices[][3] = {
+		{ 0, 2, 1 },
+		{ 1, 2, 3 }
+	};
+	
+	unsigned int vertex_element_count = 3 * 4;
+	unsigned int normal_element_count = vertex_element_count;
+	unsigned int indice_count = 2 * 3;
+	
+	mesh.vertices.resize(vertex_element_count);
+	mesh.normals.resize(normal_element_count);
+	mesh.indices.resize(indice_count);
+	
+	std::memcpy(&mesh.vertices[0], vertices, vertex_element_count * sizeof(float));
+	std::memcpy(&mesh.indices[0], indices, indice_count * sizeof(unsigned int));
+	std::memcpy(&mesh.normals[0], normals, normal_element_count * sizeof(float));
+	
+	return true;
 }
 
 bool load_mesh_cube(mesh_t &mesh) {
@@ -309,6 +350,10 @@ void draw_mesh_object(const mesh_object_t & object)
 	GLuint normal_location = object.shader_program.attribute_location("vertex_normal");
 	GLuint tex_coord_location = object.has_tex_coords ? object.shader_program.attribute_location("vertex_tex_coord") : 0;
 
+	object.shader_program.set_uniform_value("material.diffuse", object.material.diffuse);
+	object.shader_program.set_uniform_value("material.specular", object.material.specular);
+	object.shader_program.set_uniform_value("material.shininess", object.material.shininess);
+
   GLsizei stride = 3 * sizeof(float);
   glBindBuffer(GL_ARRAY_BUFFER, object.vertex_buffer.handle);
   glVertexAttribPointer(position_location, 3, GL_FLOAT, GL_FALSE, stride, BUFFER_OFFSET(0));
@@ -329,7 +374,6 @@ void draw_mesh_object(const mesh_object_t & object)
 		glActiveTexture(texture_unit_names[tex.unit_id]);
 		glEnable(GL_TEXTURE_2D);
 		glBindTexture(GL_TEXTURE_2D, tex.handle);
-		object.shader_program.set_uniform_value(tex.uniform_location, tex.unit_id); 
 	}
 
   glEnableVertexAttribArray(position_location);
@@ -450,14 +494,23 @@ int main(int argc, char **args)
 	  exit(EXIT_FAILURE);		
 	}
 	tex.unit_id = 1;
-	tex.uniform_location = teapot.shader_program.uniform_location("texture0");
-	teapot.textures.push_back(tex);
 
+	// Scene settings
   glm::vec3 eye(0.0f, 0.0f, 5.0f);
   glm::vec3 center(0.0f, 0.0f, 0.0f);
   glm::vec3 up(0.0f, 1.0f, 0.0f);
   glm::mat4 view_matrix = glm::lookAt(eye, center, up); // from world to camera
   glm::vec3 light_position = glm::vec3(0.0f, 3.0f, 3.0f); // light position in world space
+
+	teapot.material.diffuse = glm::vec3(0.0f, 1.0f, 1.0f);
+	teapot.material.specular = glm::vec3(0.8f);
+	teapot.material.shininess = 128.0f;
+	teapot.shader_program.set_uniform_value("texture0", tex.unit_id); 
+	teapot.textures.push_back(tex);
+	
+	floor.material.diffuse = glm::vec3(1.0f, 1.0f, 1.0f);
+	floor.material.specular = glm::vec3(0.8f);
+	floor.material.shininess = 2.0f;
 
   //--- Renering Modes
   glEnable(GL_DEPTH_TEST);
@@ -481,9 +534,6 @@ int main(int argc, char **args)
 
 		teapot.shader_program.bind();		
 		teapot.shader_program.set_uniform_value("light_position", _light_position);
-		teapot.shader_program.set_uniform_value("material.diffuse", glm::vec3(0.0f, 0.0f, 1.0f));
-		teapot.shader_program.set_uniform_value("material.specular", glm::vec3(0.8f));
-		teapot.shader_program.set_uniform_value("material.shininess", 128.0f);
     teapot.shader_program.set_uniform_value("projection_matrix", projection_matrix);
     teapot.shader_program.set_uniform_value("view_matrix", _view_matrix);
 		draw_teapot(teapot);
@@ -491,9 +541,6 @@ int main(int argc, char **args)
 
 		floor.shader_program.bind();		
 		floor.shader_program.set_uniform_value("light_position", _light_position);
-		floor.shader_program.set_uniform_value("material.diffuse", glm::vec3(1.0f, 1.0f, 1.0f));
-		floor.shader_program.set_uniform_value("material.specular", glm::vec3(0.8f));
-		floor.shader_program.set_uniform_value("material.shininess", 2.0f);
     floor.shader_program.set_uniform_value("projection_matrix", projection_matrix);
     floor.shader_program.set_uniform_value("view_matrix", _view_matrix);
     draw_floor(floor);
