@@ -19,10 +19,16 @@
 #define BUFFER_OFFSET(bytes) ((GLubyte *)NULL + (bytes))
 
 struct mesh_t {
-  std::vector <float>vertices;
-   std::vector <float>normals;
-   std::vector <unsigned int>indices;
-   std::vector <float>tex_coords;
+  std::vector<float> vertices;
+  std::vector<float> normals;
+  std::vector<unsigned int> indices;
+  std::vector<float> tex_coords;
+};
+
+struct texture_t {
+	GLuint handle;
+	GLuint uniform_location;
+	int unit_id;
 };
 
 struct array_buffer_t {
@@ -36,6 +42,8 @@ struct mesh_object_t {
 	array_buffer_t index_buffer;
 	array_buffer_t tex_coord_buffer;
   shader_program_t shader_program;
+	bool has_tex_coords;
+	std::vector<texture_t> textures;
 };
 
 struct trackball_state_t {
@@ -51,6 +59,12 @@ bool camera_zoom = false;
 int screen_width, screen_height;
 trackball_state_t trackball_state;
 
+GLenum texture_unit_names[] = {
+	GL_TEXTURE0,
+	GL_TEXTURE1,
+	GL_TEXTURE2,
+	GL_TEXTURE3
+};
 
 glm::vec3 map_to_sphere(const trackball_state_t & tb_state, const glm::ivec2 & point)
 {
@@ -246,6 +260,8 @@ bool build_mesh_object(const mesh_t &mesh, mesh_object_t &object) {
   object.vertex_buffer.count = mesh.vertices.size();
 	object.normal_buffer.count = mesh.normals.size();
 	object.index_buffer.count = mesh.indices.size();
+	object.tex_coord_buffer.count = mesh.tex_coords.size();
+	object.has_tex_coords = object.tex_coord_buffer.count > 0;
 
   //--- Buffers
   glGenBuffers(1, &object.vertex_buffer.handle);
@@ -262,6 +278,13 @@ bool build_mesh_object(const mesh_t &mesh, mesh_object_t &object) {
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, object.index_buffer.handle);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, object.index_buffer.count * sizeof(unsigned int), &mesh.indices[0], GL_STATIC_DRAW);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+	if (object.has_tex_coords) {
+  	glGenBuffers(1, &object.tex_coord_buffer.handle);
+  	glBindBuffer(GL_ARRAY_BUFFER, object.tex_coord_buffer.handle);
+  	glBufferData(GL_ARRAY_BUFFER, object.tex_coord_buffer.count * sizeof(float), &mesh.tex_coords[0], GL_STATIC_DRAW);
+  	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	}
 
   //--- Shader
   if (!object.shader_program.add_shader_from_source_file(GL_VERTEX_SHADER, "simple.vs")) {
@@ -284,6 +307,7 @@ void draw_mesh_object(const mesh_object_t & object)
 {
 	GLuint position_location = object.shader_program.attribute_location("vertex_position");
 	GLuint normal_location = object.shader_program.attribute_location("vertex_normal");
+	GLuint tex_coord_location = object.has_tex_coords ? object.shader_program.attribute_location("vertex_tex_coord") : 0;
 
   GLsizei stride = 3 * sizeof(float);
   glBindBuffer(GL_ARRAY_BUFFER, object.vertex_buffer.handle);
@@ -294,13 +318,36 @@ void draw_mesh_object(const mesh_object_t & object)
   glVertexAttribPointer(normal_location, 3, GL_FLOAT, GL_FALSE, stride, BUFFER_OFFSET(0));
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+	if (object.has_tex_coords) {
+  	glBindBuffer(GL_ARRAY_BUFFER, object.tex_coord_buffer.handle);
+  	glVertexAttribPointer(tex_coord_location, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), BUFFER_OFFSET(0));
+  	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	}
+
+	for (size_t i = 0; i < object.textures.size(); i++) {
+		const texture_t &tex = object.textures[i];
+		glActiveTexture(texture_unit_names[tex.unit_id]);
+		glEnable(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, tex.handle);
+		object.shader_program.set_uniform_value(tex.uniform_location, tex.unit_id); 
+	}
+
   glEnableVertexAttribArray(position_location);
   glEnableVertexAttribArray(normal_location);
+	if (object.has_tex_coords) glEnableVertexAttribArray(tex_coord_location);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, object.index_buffer.handle);
   glDrawElements(GL_TRIANGLES, object.index_buffer.count, GL_UNSIGNED_INT, BUFFER_OFFSET(0));
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	if (object.has_tex_coords) glDisableVertexAttribArray(tex_coord_location);
   glDisableVertexAttribArray(normal_location);
   glDisableVertexAttribArray(position_location);
+
+	for (size_t i = 0; i < object.textures.size(); i++) {
+		const texture_t &tex = object.textures[i];
+		glActiveTexture(texture_unit_names[tex.unit_id]);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glDisable(GL_TEXTURE_2D);
+	}
 
 }
 
@@ -311,11 +358,7 @@ void draw_teapot(const mesh_object_t &teapot) {
 	teapot.shader_program.bind();	
   teapot.shader_program.set_uniform_value("model_matrix", model_matrix);
   teapot.shader_program.set_uniform_value("normal_matrix", normal_matrix);
-  // glActiveTexture(GL_TEXTURE0);
-  // glBindTexture(GL_TEXTURE_2D, texture_id);
   draw_mesh_object(teapot);
-  // glBindTexture(GL_TEXTURE_2D, 0);
-  // glActiveTexture(0);
 	teapot.shader_program.release();
 }
 
@@ -328,6 +371,23 @@ void draw_floor(const mesh_object_t &floor) {
   floor.shader_program.set_uniform_value("normal_matrix", normal_matrix);
   draw_mesh_object(floor);
 	floor.shader_program.release();
+}
+
+bool build_texutre_from_file(const char *filepath, texture_t &tex) {
+  GLuint texture_handle;
+	glGenTextures(1, &texture_handle);
+  glBindTexture(GL_TEXTURE_2D, texture_handle);
+  if (!glfwLoadTexture2D(filepath, GLFW_BUILD_MIPMAPS_BIT))
+		return false;
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+	tex.handle = texture_handle;
+
+	return true;
 }
 
 int main(int argc, char **args)
@@ -382,20 +442,16 @@ int main(int argc, char **args)
 	}
 
   //--- Texture
-  const char *texture_filepath = "checker.tga";
-  GLuint texture_id;
-  glGenTextures(1, &texture_id);
-  glBindTexture(GL_TEXTURE_2D, texture_id);
-  if (!glfwLoadTexture2D(texture_filepath, GLFW_BUILD_MIPMAPS_BIT)) {
-    std::cout << "Failed to load texture: " << texture_filepath << std::endl;
-    glfwTerminate();
-    exit(EXIT_FAILURE);
-  }
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-  glBindTexture(GL_TEXTURE_2D, 0);
+	const char *texture_filepath = "checker.tga";
+	texture_t tex;
+	if (! build_texutre_from_file(texture_filepath, tex)) {
+		std::cout << "Failed to load texture: " << texture_filepath << std::endl;
+	  glfwTerminate();
+	  exit(EXIT_FAILURE);		
+	}
+	tex.unit_id = 1;
+	tex.uniform_location = teapot.shader_program.uniform_location("texture0");
+	teapot.textures.push_back(tex);
 
   glm::vec3 eye(0.0f, 0.0f, 5.0f);
   glm::vec3 center(0.0f, 0.0f, 0.0f);
@@ -428,7 +484,6 @@ int main(int argc, char **args)
 		teapot.shader_program.set_uniform_value("material.diffuse", glm::vec3(0.0f, 0.0f, 1.0f));
 		teapot.shader_program.set_uniform_value("material.specular", glm::vec3(0.8f));
 		teapot.shader_program.set_uniform_value("material.shininess", 128.0f);
-	  teapot.shader_program.set_uniform_value("texture0", 0); 
     teapot.shader_program.set_uniform_value("projection_matrix", projection_matrix);
     teapot.shader_program.set_uniform_value("view_matrix", _view_matrix);
 		draw_teapot(teapot);
@@ -439,7 +494,6 @@ int main(int argc, char **args)
 		floor.shader_program.set_uniform_value("material.diffuse", glm::vec3(1.0f, 1.0f, 1.0f));
 		floor.shader_program.set_uniform_value("material.specular", glm::vec3(0.8f));
 		floor.shader_program.set_uniform_value("material.shininess", 2.0f);
-	  floor.shader_program.set_uniform_value("texture0", 0); 
     floor.shader_program.set_uniform_value("projection_matrix", projection_matrix);
     floor.shader_program.set_uniform_value("view_matrix", _view_matrix);
     draw_floor(floor);

@@ -59,6 +59,7 @@ public:
 	
 	GLuint attribute_location(const char *name) const;
 	GLuint uniform_location(const char *name) const;
+	void set_uniform_value(GLuint location, int value) const;
 	void set_uniform_value(const char *name, int value) const;
 	void set_uniform_value(const char *name, float value) const;
 	void set_uniform_value(const char *name, const glm::vec3 &v) const;
