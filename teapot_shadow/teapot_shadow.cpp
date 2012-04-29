@@ -3,6 +3,7 @@
 #include <vector>
 #include <cstdio>
 #include <cstdlib>
+#include <cassert>
 #include <fstream>
 #include <string>
 #include <sstream>
@@ -50,7 +51,7 @@ struct mesh_object_t {
 	array_buffer_t tex_coord_buffer;
 	bool has_tex_coords;
 	std::vector<texture_t> textures;
-	shader_program_t shader_program;
+	shader_program_t *shader_program;
 	material_t material;
 	glm::mat4 transform_matrix;
 };
@@ -309,7 +310,27 @@ bool load_mesh_from_file(const char *ctm_filepath, mesh_t & mesh)
   }
 }
 
-bool build_mesh_object(const mesh_t &mesh, mesh_object_t &object, const char *vertex_shader_filepath, const char *fragment_shader_filepath) {
+bool build_shader_program(shader_program_t &shader_program, const char *vertex_shader_filepath, const char *fragment_shader_filepath) {
+  if (!shader_program.add_shader_from_source_file(GL_VERTEX_SHADER, vertex_shader_filepath)) {
+		std::cerr << "*** " << vertex_shader_filepath << std::endl;
+    std::cerr << shader_program.log() << std::endl;
+    return false;
+  }
+  if (!shader_program.add_shader_from_source_file(GL_FRAGMENT_SHADER, fragment_shader_filepath)) {
+		std::cerr << "*** " << fragment_shader_filepath << std::endl;
+    std::cerr << shader_program.log() << std::endl;
+    return false;
+  }
+  if (!shader_program.link()) {
+		std::cerr << "*** " << vertex_shader_filepath << " and " << fragment_shader_filepath << std::endl;
+    std::cerr << shader_program.log() << std::endl;
+    return false;
+  }	
+
+	return true;
+}
+
+bool build_mesh_object(const mesh_t &mesh, mesh_object_t &object) {
 
   object.vertex_buffer.count = mesh.vertices.size();
 	object.normal_buffer.count = mesh.normals.size();
@@ -339,37 +360,27 @@ bool build_mesh_object(const mesh_t &mesh, mesh_object_t &object, const char *ve
   	glBufferData(GL_ARRAY_BUFFER, object.tex_coord_buffer.count * sizeof(float), &mesh.tex_coords[0], GL_STATIC_DRAW);
   	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
-
-  //--- Shader
-  if (!object.shader_program.add_shader_from_source_file(GL_VERTEX_SHADER, vertex_shader_filepath)) {
-    std::cerr << object.shader_program.log() << std::endl;
-    return false;
-  }
-  if (!object.shader_program.add_shader_from_source_file(GL_FRAGMENT_SHADER, fragment_shader_filepath)) {
-    std::cerr << object.shader_program.log() << std::endl;
-    return false;
-  }
-  if (!object.shader_program.link()) {
-    std::cerr << object.shader_program.log() << std::endl;
-    return false;
-  }
+	
+	object.shader_program = NULL;
 
 	return true;
 }
 
 void draw_mesh_object(const mesh_object_t & object)
 {
-	GLuint position_location = object.shader_program.attribute_location("vertex_position");
-	GLuint normal_location = object.shader_program.attribute_location("vertex_normal");
-	GLuint tex_coord_location = object.has_tex_coords ? object.shader_program.attribute_location("vertex_tex_coord") : 0;
+	assert(object.shader_program != NULL);
+	
+	GLuint position_location = object.shader_program->attribute_location("vertex_position");
+	GLuint normal_location = object.shader_program->attribute_location("vertex_normal");
+	GLuint tex_coord_location = object.has_tex_coords ? object.shader_program->attribute_location("vertex_tex_coord") : 0;
 
 	glm::mat3 normal_matrix = glm::mat3(glm::transpose(glm::inverse(object.transform_matrix)));
-	object.shader_program.set_uniform_value("model_matrix", object.transform_matrix);
-	object.shader_program.set_uniform_value("normal_matrix", normal_matrix);
+	object.shader_program->set_uniform_value("model_matrix", object.transform_matrix);
+	object.shader_program->set_uniform_value("normal_matrix", normal_matrix);
 
-	object.shader_program.set_uniform_value("material.diffuse", object.material.diffuse);
-	object.shader_program.set_uniform_value("material.specular", object.material.specular);
-	object.shader_program.set_uniform_value("material.shininess", object.material.shininess);
+	object.shader_program->set_uniform_value("material.diffuse", object.material.diffuse);
+	object.shader_program->set_uniform_value("material.specular", object.material.specular);
+	object.shader_program->set_uniform_value("material.shininess", object.material.shininess);
 
   GLsizei stride = 3 * sizeof(float);
   glBindBuffer(GL_ARRAY_BUFFER, object.vertex_buffer.handle);
@@ -492,11 +503,19 @@ int main(int argc, char **args)
   glfwEnable(GLFW_STICKY_KEYS);
   glfwSwapInterval(1);
 
+	// Shaders
+	shader_program_t phong_shader;
+	build_shader_program(phong_shader, "phong.vs", "phong.fs");
+	shader_program_t rect_shader;
+	build_shader_program(rect_shader, "rect.vs", "rect.fs");
+	shader_program_t render_buffer_shader;
+	build_shader_program(render_buffer_shader, "render_buffer.vs", "render_buffer.fs");
+
 	//--- Mesh Objects
 	mesh_t mesh_floor;
 	load_mesh_cube(mesh_floor);
   mesh_object_t floor;
-  if (! build_mesh_object(mesh_floor, floor, "phong.vs", "phong.fs") ) {
+  if (! build_mesh_object(mesh_floor, floor) ) {
     glfwTerminate();
     exit(EXIT_FAILURE);	
 	}
@@ -504,7 +523,7 @@ int main(int argc, char **args)
 	mesh_t mesh_plane;
 	load_mesh_plane(mesh_plane);
   mesh_object_t plane;
-  if (! build_mesh_object(mesh_plane, plane, "rect.vs", "rect.fs") ) {
+  if (! build_mesh_object(mesh_plane, plane) ) {
     glfwTerminate();
     exit(EXIT_FAILURE);	
 	}
@@ -515,7 +534,7 @@ int main(int argc, char **args)
     exit(EXIT_FAILURE);		
 	}
   mesh_object_t teapot;
-  if (! build_mesh_object(mesh_teapot, teapot, "phong.vs", "phong.fs") ) {
+  if (! build_mesh_object(mesh_teapot, teapot) ) {
 	  glfwTerminate();
     exit(EXIT_FAILURE);
 	}
@@ -588,16 +607,18 @@ int main(int argc, char **args)
 			glClear(GL_DEPTH_BUFFER_BIT);
 			glClearDepth(1.0f);
 			glViewport(0, 0, depth_tex_width, depth_tex_height);
-			teapot.shader_program.bind();		
-    	teapot.shader_program.set_uniform_value("projection_matrix", projection_matrix);
-    	teapot.shader_program.set_uniform_value("view_matrix", light_view_matrix);
+			teapot.shader_program = &render_buffer_shader;
+			teapot.shader_program->bind();		
+    	teapot.shader_program->set_uniform_value("projection_matrix", projection_matrix);
+    	teapot.shader_program->set_uniform_value("view_matrix", light_view_matrix);
 			draw_mesh_object(teapot);
-			teapot.shader_program.release();
-			floor.shader_program.bind();		
-    	floor.shader_program.set_uniform_value("projection_matrix", projection_matrix);
-    	floor.shader_program.set_uniform_value("view_matrix", light_view_matrix);
+			teapot.shader_program->release();
+			floor.shader_program = &render_buffer_shader;
+			floor.shader_program->bind();		
+    	floor.shader_program->set_uniform_value("projection_matrix", projection_matrix);
+    	floor.shader_program->set_uniform_value("view_matrix", light_view_matrix);
     	draw_mesh_object(floor);
-			floor.shader_program.release();		
+			floor.shader_program->release();		
 		}
 		glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);		
 	
@@ -606,14 +627,15 @@ int main(int argc, char **args)
 			glDisable(GL_DEPTH_TEST);
 			glClear(GL_COLOR_BUFFER_BIT);		
     	glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-    	glViewport(0, 0, screen_width, screen_height);		
-			plane.shader_program.bind();		
-    	plane.shader_program.set_uniform_value("projection_matrix", glm::ortho(0.0f, (float)screen_width, 0.0f, (float)screen_height, 0.5f, 1.0f));
-    	plane.shader_program.set_uniform_value("view_matrix", glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -1.0f)));
-	  	plane.shader_program.set_uniform_value("model_matrix", glm::scale(glm::mat4(1.0f), glm::vec3(screen_width, screen_height, 1.0f)));
-			plane.shader_program.set_uniform_value("texture2", depth_tex_buffer.unit_id); 
+    	glViewport(0, 0, screen_width, screen_height);	
+			plane.shader_program = &rect_shader;
+			plane.shader_program->bind();		
+    	plane.shader_program->set_uniform_value("projection_matrix", glm::ortho(0.0f, (float)screen_width, 0.0f, (float)screen_height, 0.5f, 1.0f));
+    	plane.shader_program->set_uniform_value("view_matrix", glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -1.0f)));
+	  	plane.shader_program->set_uniform_value("model_matrix", glm::scale(glm::mat4(1.0f), glm::vec3(screen_width, screen_height, 1.0f)));
+			plane.shader_program->set_uniform_value("texture2", depth_tex_buffer.unit_id); 
 	  	draw_mesh_object(plane);
-			plane.shader_program.release();
+			plane.shader_program->release();
 			glEnable(GL_DEPTH_TEST);
 		}
 #endif
@@ -629,24 +651,26 @@ int main(int argc, char **args)
 	    glm::mat4 projection_matrix = glm::perspective(camera_fovy, (float) screen_width / (float) screen_height, 1.0f, 30.0f);
 			glm::mat4 _view_matrix = view_matrix * glm::mat4_cast(camera_rotation.orientation);
 
-			teapot.shader_program.bind();		
-			teapot.shader_program.set_uniform_value("projection_matrix", projection_matrix);
-	    teapot.shader_program.set_uniform_value("view_matrix", _view_matrix);
-			teapot.shader_program.set_uniform_value("light_position", light_position);
-			teapot.shader_program.set_uniform_value("light_pov_matrix", light_pov_matrix);
-	    teapot.shader_program.set_uniform_value("texture1", tex.unit_id); 
-			teapot.shader_program.set_uniform_value("texture2", depth_tex_buffer.unit_id); 
+			teapot.shader_program = &phong_shader;
+			teapot.shader_program->bind();		
+			teapot.shader_program->set_uniform_value("projection_matrix", projection_matrix);
+	    teapot.shader_program->set_uniform_value("view_matrix", _view_matrix);
+			teapot.shader_program->set_uniform_value("light_position", light_position);
+			teapot.shader_program->set_uniform_value("light_pov_matrix", light_pov_matrix);
+	    teapot.shader_program->set_uniform_value("texture1", tex.unit_id); 
+			teapot.shader_program->set_uniform_value("texture2", depth_tex_buffer.unit_id); 
 			draw_mesh_object(teapot);
-			teapot.shader_program.release();
+			teapot.shader_program->release();
 
-			floor.shader_program.bind();		
-			floor.shader_program.set_uniform_value("projection_matrix", projection_matrix);
-	    floor.shader_program.set_uniform_value("view_matrix", _view_matrix);
-			floor.shader_program.set_uniform_value("light_position", light_position);
-			floor.shader_program.set_uniform_value("light_pov_matrix", light_pov_matrix);
-			floor.shader_program.set_uniform_value("texture2", depth_tex_buffer.unit_id); 
+			floor.shader_program = &phong_shader;
+			floor.shader_program->bind();		
+			floor.shader_program->set_uniform_value("projection_matrix", projection_matrix);
+	    floor.shader_program->set_uniform_value("view_matrix", _view_matrix);
+			floor.shader_program->set_uniform_value("light_position", light_position);
+			floor.shader_program->set_uniform_value("light_pov_matrix", light_pov_matrix);
+			floor.shader_program->set_uniform_value("texture2", depth_tex_buffer.unit_id); 
 	    draw_mesh_object(floor);
-			floor.shader_program.release();	
+			floor.shader_program->release();	
 		}
 #endif
 
