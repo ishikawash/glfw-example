@@ -496,7 +496,7 @@ int main(int argc, char **args)
 	mesh_t mesh_floor;
 	load_mesh_cube(mesh_floor);
   mesh_object_t floor;
-  if (! build_mesh_object(mesh_floor, floor, "simple.vs", "simple.fs") ) {
+  if (! build_mesh_object(mesh_floor, floor, "phong.vs", "phong.fs") ) {
     glfwTerminate();
     exit(EXIT_FAILURE);	
 	}
@@ -515,7 +515,7 @@ int main(int argc, char **args)
     exit(EXIT_FAILURE);		
 	}
   mesh_object_t teapot;
-  if (! build_mesh_object(mesh_teapot, teapot, "simple.vs", "simple.fs") ) {
+  if (! build_mesh_object(mesh_teapot, teapot, "phong.vs", "phong.fs") ) {
 	  glfwTerminate();
     exit(EXIT_FAILURE);
 	}
