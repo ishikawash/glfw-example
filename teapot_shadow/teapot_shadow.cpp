@@ -7,12 +7,14 @@
 #include <string>
 #include <sstream>
 
+#include <OpenGL/gl.h>
+#include <OpenGL/glext.h>
+#include <GL/glfw.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/string_cast.hpp>
 #include <openctmpp.h>
-#include <GL/glfw.h>
 
 #include "shader.hpp"
 
@@ -46,10 +48,11 @@ struct mesh_object_t {
 	array_buffer_t normal_buffer;
 	array_buffer_t index_buffer;
 	array_buffer_t tex_coord_buffer;
-  shader_program_t shader_program;
 	bool has_tex_coords;
 	std::vector<texture_t> textures;
+	shader_program_t shader_program;
 	material_t material;
+	glm::mat4 transform_matrix;
 };
 
 struct trackball_state_t {
@@ -63,7 +66,10 @@ struct trackball_state_t {
 float camera_fovy = 30.0f;
 bool camera_zoom = false;
 int screen_width, screen_height;
-trackball_state_t trackball_state;
+trackball_state_t *current_trackball_state;
+trackball_state_t camera_rotation;
+trackball_state_t light_rotation;
+bool light_rotation_enabled = false;
 
 GLenum texture_unit_names[] = {
 	GL_TEXTURE0,
@@ -98,11 +104,14 @@ void mouse(int button, int action)
   if (button == GLFW_MOUSE_BUTTON_LEFT) {
     switch (action) {
     case GLFW_PRESS:
-      glfwGetMousePos(&trackball_state.prev_position.x, &trackball_state.prev_position.y);
-      trackball_state.dragged = true;
+			int x, y;
+      glfwGetMousePos(&x, &y);
+			current_trackball_state->prev_position.x = x;
+			current_trackball_state->prev_position.y = y;
+      current_trackball_state->dragged = true;
       break;
     case GLFW_RELEASE:
-      trackball_state.dragged = false;
+      current_trackball_state->dragged = false;
       break;
     }
   }
@@ -111,13 +120,13 @@ void mouse(int button, int action)
 
 void motion(int x, int y)
 {
-  if (!trackball_state.dragged)
+  if (!current_trackball_state->dragged)
     return;
 
   glm::ivec2 current_position(x, y);
 
   if (camera_zoom) {
-    glm::vec2 v(trackball_state.prev_position.x - current_position.x, trackball_state.prev_position.y - current_position.y);
+    glm::vec2 v(current_trackball_state->prev_position.x - current_position.x, current_trackball_state->prev_position.y - current_position.y);
     float delta = glm::length(v);
     if (delta > 0.0f) {
       float direction = glm::sign(glm::dot(v, glm::vec2(0.0f, 1.0f)));
@@ -125,19 +134,19 @@ void motion(int x, int y)
       camera_fovy = glm::clamp(camera_fovy + theta, 5.0f, 60.0f);
     }
   } else {
-    glm::vec3 v0 = map_to_sphere(trackball_state, trackball_state.prev_position);
-    glm::vec3 v1 = map_to_sphere(trackball_state, current_position);
+    glm::vec3 v0 = map_to_sphere(*current_trackball_state, current_trackball_state->prev_position);
+    glm::vec3 v1 = map_to_sphere(*current_trackball_state, current_position);
     glm::vec3 v2 = glm::cross(v0, v1); // calculate rotation axis
 
     float d = glm::dot(v0, v1);
     float s = std::sqrt((1.0f + d) * 2.0f);
     glm::quat q(0.5f * s, v2 / s);
-    trackball_state.orientation = q * trackball_state.orientation;
-    trackball_state.orientation /= glm::length(trackball_state.orientation);
+    current_trackball_state->orientation = q * current_trackball_state->orientation;
+    current_trackball_state->orientation /= glm::length(current_trackball_state->orientation);
   }
 
-  trackball_state.prev_position.x = x;
-  trackball_state.prev_position.y = y;
+  current_trackball_state->prev_position.x = x;
+  current_trackball_state->prev_position.y = y;
 }
 
 void resize(int width, int height)
@@ -145,8 +154,9 @@ void resize(int width, int height)
   height = height > 0 ? height : 1;
   screen_width = width;
   screen_height = height;
-  trackball_state.center_position.x = 0.5 * width;
-  trackball_state.center_position.y = 0.5 * height;
+
+  camera_rotation.center_position.x = light_rotation.center_position.x = 0.5 * width;
+  camera_rotation.center_position.y = light_rotation.center_position.y = 0.5 * height;
 }
 
 void keyboard(int key, int action)
@@ -155,7 +165,10 @@ void keyboard(int key, int action)
   case GLFW_PRESS:
     if (key == GLFW_KEY_LSHIFT) {
       camera_zoom = true;
-    }
+    } else if (key == GLFW_KEY_SPACE) {
+			light_rotation_enabled = !light_rotation_enabled;
+			current_trackball_state = light_rotation_enabled ? &light_rotation : &camera_rotation;
+		}
     break;
   case GLFW_RELEASE:
     camera_zoom = false;
@@ -165,22 +178,22 @@ void keyboard(int key, int action)
 
 bool load_mesh_plane(mesh_t &mesh) {
 	float vertices[][3] = {
-		{ -0.50, 0.00, -0.50 },
-		{ 0.50, 0.00, -0.50 },
-		{ -0.50, 0.00, 0.50 },
-		{ 0.50, 0.00, 0.50 }
+		{ 0.00, 0.00, 0.00 },
+		{ 1.00, 0.00, 0.00 },
+		{ 0.00, 1.00, 0.00 },
+		{ 1.00, 1.00, 0.00 }
 	};
 
 	float normals[][3] = {
-		{ 0.00, 1.00, 0.00 },
-		{ 0.00, 1.00, 0.00 },
-		{ 0.00, 1.00, 0.00 },
-		{ 0.00, 1.00, 0.00 }
+		{ 0.00, 0.00, 1.00 },
+		{ 0.00, 0.00, 1.00 },
+		{ 0.00, 0.00, 1.00 },
+		{ 0.00, 0.00, 1.00 }
 	};
 
 	unsigned int indices[][3] = {
-		{ 0, 2, 1 },
-		{ 1, 2, 3 }
+		{ 0, 1, 2 },
+		{ 1, 3, 2 }
 	};
 	
 	unsigned int vertex_element_count = 3 * 4;
@@ -296,7 +309,7 @@ bool load_mesh_from_file(const char *ctm_filepath, mesh_t & mesh)
   }
 }
 
-bool build_mesh_object(const mesh_t &mesh, mesh_object_t &object) {
+bool build_mesh_object(const mesh_t &mesh, mesh_object_t &object, const char *vertex_shader_filepath, const char *fragment_shader_filepath) {
 
   object.vertex_buffer.count = mesh.vertices.size();
 	object.normal_buffer.count = mesh.normals.size();
@@ -328,11 +341,11 @@ bool build_mesh_object(const mesh_t &mesh, mesh_object_t &object) {
 	}
 
   //--- Shader
-  if (!object.shader_program.add_shader_from_source_file(GL_VERTEX_SHADER, "simple.vs")) {
+  if (!object.shader_program.add_shader_from_source_file(GL_VERTEX_SHADER, vertex_shader_filepath)) {
     std::cerr << object.shader_program.log() << std::endl;
     return false;
   }
-  if (!object.shader_program.add_shader_from_source_file(GL_FRAGMENT_SHADER, "simple.fs")) {
+  if (!object.shader_program.add_shader_from_source_file(GL_FRAGMENT_SHADER, fragment_shader_filepath)) {
     std::cerr << object.shader_program.log() << std::endl;
     return false;
   }
@@ -349,6 +362,10 @@ void draw_mesh_object(const mesh_object_t & object)
 	GLuint position_location = object.shader_program.attribute_location("vertex_position");
 	GLuint normal_location = object.shader_program.attribute_location("vertex_normal");
 	GLuint tex_coord_location = object.has_tex_coords ? object.shader_program.attribute_location("vertex_tex_coord") : 0;
+
+	glm::mat3 normal_matrix = glm::mat3(glm::transpose(glm::inverse(object.transform_matrix)));
+	object.shader_program.set_uniform_value("model_matrix", object.transform_matrix);
+	object.shader_program.set_uniform_value("normal_matrix", normal_matrix);
 
 	object.shader_program.set_uniform_value("material.diffuse", object.material.diffuse);
 	object.shader_program.set_uniform_value("material.specular", object.material.specular);
@@ -372,7 +389,6 @@ void draw_mesh_object(const mesh_object_t & object)
 	for (size_t i = 0; i < object.textures.size(); i++) {
 		const texture_t &tex = object.textures[i];
 		glActiveTexture(texture_unit_names[tex.unit_id]);
-		glEnable(GL_TEXTURE_2D);
 		glBindTexture(GL_TEXTURE_2D, tex.handle);
 	}
 
@@ -390,31 +406,8 @@ void draw_mesh_object(const mesh_object_t & object)
 		const texture_t &tex = object.textures[i];
 		glActiveTexture(texture_unit_names[tex.unit_id]);
 		glBindTexture(GL_TEXTURE_2D, 0);
-		glDisable(GL_TEXTURE_2D);
 	}
 
-}
-
-void draw_teapot(const mesh_object_t &teapot) {
-	glm::mat4 model_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f));
-	glm::mat3 normal_matrix = glm::mat3(glm::transpose(glm::inverse(model_matrix)));
-	
-	teapot.shader_program.bind();	
-  teapot.shader_program.set_uniform_value("model_matrix", model_matrix);
-  teapot.shader_program.set_uniform_value("normal_matrix", normal_matrix);
-  draw_mesh_object(teapot);
-	teapot.shader_program.release();
-}
-
-void draw_floor(const mesh_object_t &floor) {
-	glm::mat4 model_matrix = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f, 0.05f, 2.0f));
-	glm::mat3 normal_matrix = glm::mat3(glm::transpose(glm::inverse(model_matrix)));
-	
-	floor.shader_program.bind();
-  floor.shader_program.set_uniform_value("model_matrix", model_matrix);
-  floor.shader_program.set_uniform_value("normal_matrix", normal_matrix);
-  draw_mesh_object(floor);
-	floor.shader_program.release();
 }
 
 bool build_texutre_from_file(const char *filepath, texture_t &tex) {
@@ -434,16 +427,50 @@ bool build_texutre_from_file(const char *filepath, texture_t &tex) {
 	return true;
 }
 
-int main(int argc, char **args)
-{
-  const char *ctm_filepath = (argc > 1) ? args[1] : "teapot.ctm";
+bool create_framebuffer_and_depth_texture(size_t width, size_t height, texture_t &tex, GLuint *fb_handle) {
+  glGenTextures(1, &tex.handle);
+  glBindTexture(GL_TEXTURE_2D, tex.handle);   
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT16, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, 0);  
+	// glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_R_TO_TEXTURE);
+	// glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+	glTexParameteri(GL_TEXTURE_2D, GL_DEPTH_TEXTURE_MODE, GL_INTENSITY);
 
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);  
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);  
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+	GLuint handle;
+	glGenFramebuffersEXT(1, &handle);
+	glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, handle);
+	glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_TEXTURE_2D, tex.handle, 0);
+	glDrawBuffer(GL_NONE);
+	glReadBuffer(GL_NONE);
+	glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);		
+	*fb_handle = handle;
+	
+	return true;
+}
+
+void trackback_state_initialize(trackball_state_t &trackball_state) {
   trackball_state.radius = 150.0f;
   trackball_state.dragged = false;
   trackball_state.orientation.w = 1.0f;
   trackball_state.orientation.x = 0.0f;
   trackball_state.orientation.y = 0.0f;
-  trackball_state.orientation.z = 0.0f;
+  trackball_state.orientation.z = 0.0f;	
+}
+
+// #define DEPTH_BUFFER_DEBUG
+
+int main(int argc, char **args)
+{
+  const char *ctm_filepath = (argc > 1) ? args[1] : "teapot.ctm";
+
+	trackback_state_initialize(camera_rotation);
+	trackback_state_initialize(light_rotation);
+	current_trackball_state = &camera_rotation;
 
   if (!glfwInit()) {
     std::cerr << "Failed to initialize GLFW" << std::endl;
@@ -469,7 +496,15 @@ int main(int argc, char **args)
 	mesh_t mesh_floor;
 	load_mesh_cube(mesh_floor);
   mesh_object_t floor;
-  if (! build_mesh_object(mesh_floor, floor) ) {
+  if (! build_mesh_object(mesh_floor, floor, "simple.vs", "simple.fs") ) {
+    glfwTerminate();
+    exit(EXIT_FAILURE);	
+	}
+
+	mesh_t mesh_plane;
+	load_mesh_plane(mesh_plane);
+  mesh_object_t plane;
+  if (! build_mesh_object(mesh_plane, plane, "rect.vs", "rect.fs") ) {
     glfwTerminate();
     exit(EXIT_FAILURE);	
 	}
@@ -480,7 +515,7 @@ int main(int argc, char **args)
     exit(EXIT_FAILURE);		
 	}
   mesh_object_t teapot;
-  if (! build_mesh_object(mesh_teapot, teapot) ) {
+  if (! build_mesh_object(mesh_teapot, teapot, "simple.vs", "simple.fs") ) {
 	  glfwTerminate();
     exit(EXIT_FAILURE);
 	}
@@ -488,63 +523,132 @@ int main(int argc, char **args)
   //--- Texture
 	const char *texture_filepath = "checker.tga";
 	texture_t tex;
+	tex.unit_id = 1;
 	if (! build_texutre_from_file(texture_filepath, tex)) {
 		std::cout << "Failed to load texture: " << texture_filepath << std::endl;
 	  glfwTerminate();
 	  exit(EXIT_FAILURE);		
 	}
-	tex.unit_id = 1;
+
+	//--- FBO
+	texture_t depth_tex_buffer;
+	int depth_tex_width = 2 * screen_width;
+	int depth_tex_height = 2 * screen_height;
+	depth_tex_buffer.unit_id = 2;
+	GLuint fb_handle;
+	create_framebuffer_and_depth_texture(depth_tex_width, depth_tex_height, depth_tex_buffer, &fb_handle);
 
 	// Scene settings
-  glm::vec3 eye(0.0f, 0.0f, 5.0f);
-  glm::vec3 center(0.0f, 0.0f, 0.0f);
-  glm::vec3 up(0.0f, 1.0f, 0.0f);
-  glm::mat4 view_matrix = glm::lookAt(eye, center, up); // from world to camera
-  glm::vec3 light_position = glm::vec3(0.0f, 3.0f, 3.0f); // light position in world space
+  glm::vec3 camera_position(0.0f, 0.0f, 5.0f);
+  glm::vec3 camera_center(0.0f, 0.0f, 0.0f);
+  glm::vec3 camera_up(0.0f, 1.0f, 0.0f);
+  glm::mat4 view_matrix = glm::lookAt(camera_position, camera_center, camera_up); // from world to camera
+
+	glm::mat4 light_pov_matrix;	
+	glm::mat4 bias(
+		0.5f, 0.0f, 0.0f, 0.0f,
+		0.0f, 0.5f, 0.0f, 0.0f,
+		0.0f, 0.0f, 0.5f, 0.0f,
+		0.5f, 0.5f, 0.5f, 1.0f
+		);
 
 	teapot.material.diffuse = glm::vec3(0.0f, 1.0f, 1.0f);
 	teapot.material.specular = glm::vec3(0.8f);
-	teapot.material.shininess = 128.0f;
-	teapot.shader_program.set_uniform_value("texture0", tex.unit_id); 
-	teapot.textures.push_back(tex);
+	teapot.material.shininess = 128.0f;	
+	teapot.textures.push_back(tex);	
+	teapot.textures.push_back(depth_tex_buffer);
 	
 	floor.material.diffuse = glm::vec3(1.0f, 1.0f, 1.0f);
 	floor.material.specular = glm::vec3(0.8f);
 	floor.material.shininess = 2.0f;
+	floor.textures.push_back(depth_tex_buffer);
+	
+	plane.textures.push_back(depth_tex_buffer);
 
-  //--- Renering Modes
-  glEnable(GL_DEPTH_TEST);
-  glEnable(GL_CULL_FACE);
-  glCullFace(GL_BACK);
+	glEnable(GL_TEXTURE_2D);
+	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_CULL_FACE);
 
   do {
-    glClearColor(0.5f, 0.5f, 0.5f, 0.0f);
-    glClearDepth(1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    glViewport(0, 0, screen_width, screen_height);
-
-		glm::mat4 rotation = glm::mat4_cast(trackball_state.orientation);
+		//--- Transform
+		glm::vec3 light_position = glm::mat3_cast(light_rotation.orientation) * glm::vec3(0.0f, 5.0f, 0.0f);
+		glm::vec3 light_center(0.0f, 0.0f, 0.0f);
+		glm::vec3 light_up(0.0f, 0.0f, 1.0f);
+		glm::mat4 light_view_matrix = glm::lookAt(light_position, light_center, light_up);
 		
-    glm::mat4 projection_matrix = glm::perspective(camera_fovy, (float) screen_width / (float) screen_height, 1.0f, 30.0f);
-		glm::mat4 _view_matrix = view_matrix * rotation;
-		glm::vec3 _light_position = light_position;
-		// glm::mat4 _view_matrix = view_matrix;
-		// glm::vec3 _light_position = light_position * glm::transpose(glm::mat3(rotation));
+		teapot.transform_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f));
+		floor.transform_matrix = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f, 0.05f, 2.0f));
+		
+		//--- Render
+		glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fb_handle);
+		{
+	    glm::mat4 projection_matrix = glm::perspective(30.0f, (float) screen_width / (float) screen_height, 0.5f, 100.0f);
+			light_pov_matrix = bias * projection_matrix * light_view_matrix;
+			
+			glClear(GL_DEPTH_BUFFER_BIT);
+			glClearDepth(1.0f);
+			glViewport(0, 0, depth_tex_width, depth_tex_height);
+			teapot.shader_program.bind();		
+    	teapot.shader_program.set_uniform_value("projection_matrix", projection_matrix);
+    	teapot.shader_program.set_uniform_value("view_matrix", light_view_matrix);
+			draw_mesh_object(teapot);
+			teapot.shader_program.release();
+			floor.shader_program.bind();		
+    	floor.shader_program.set_uniform_value("projection_matrix", projection_matrix);
+    	floor.shader_program.set_uniform_value("view_matrix", light_view_matrix);
+    	draw_mesh_object(floor);
+			floor.shader_program.release();		
+		}
+		glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);		
+	
+#ifdef DEPTH_BUFFER_DEBUG
+		{
+			glDisable(GL_DEPTH_TEST);
+			glClear(GL_COLOR_BUFFER_BIT);		
+    	glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+    	glViewport(0, 0, screen_width, screen_height);		
+			plane.shader_program.bind();		
+    	plane.shader_program.set_uniform_value("projection_matrix", glm::ortho(0.0f, (float)screen_width, 0.0f, (float)screen_height, 0.5f, 1.0f));
+    	plane.shader_program.set_uniform_value("view_matrix", glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -1.0f)));
+	  	plane.shader_program.set_uniform_value("model_matrix", glm::scale(glm::mat4(1.0f), glm::vec3(screen_width, screen_height, 1.0f)));
+			plane.shader_program.set_uniform_value("texture2", depth_tex_buffer.unit_id); 
+	  	draw_mesh_object(plane);
+			plane.shader_program.release();
+			glEnable(GL_DEPTH_TEST);
+		}
+#endif
 
-		teapot.shader_program.bind();		
-		teapot.shader_program.set_uniform_value("light_position", _light_position);
-    teapot.shader_program.set_uniform_value("projection_matrix", projection_matrix);
-    teapot.shader_program.set_uniform_value("view_matrix", _view_matrix);
-		draw_teapot(teapot);
-		teapot.shader_program.release();
+#ifndef DEPTH_BUFFER_DEBUG
+		{			
+			glCullFace(GL_BACK);
+			glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+			glClearDepth(1.0f);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			glViewport(0, 0, screen_width, screen_height);
 
-		floor.shader_program.bind();		
-		floor.shader_program.set_uniform_value("light_position", _light_position);
-    floor.shader_program.set_uniform_value("projection_matrix", projection_matrix);
-    floor.shader_program.set_uniform_value("view_matrix", _view_matrix);
-    draw_floor(floor);
-		floor.shader_program.release();
+	    glm::mat4 projection_matrix = glm::perspective(camera_fovy, (float) screen_width / (float) screen_height, 1.0f, 30.0f);
+			glm::mat4 _view_matrix = view_matrix * glm::mat4_cast(camera_rotation.orientation);
+
+			teapot.shader_program.bind();		
+			teapot.shader_program.set_uniform_value("projection_matrix", projection_matrix);
+	    teapot.shader_program.set_uniform_value("view_matrix", _view_matrix);
+			teapot.shader_program.set_uniform_value("light_position", light_position);
+			teapot.shader_program.set_uniform_value("light_pov_matrix", light_pov_matrix);
+	    teapot.shader_program.set_uniform_value("texture1", tex.unit_id); 
+			teapot.shader_program.set_uniform_value("texture2", depth_tex_buffer.unit_id); 
+			draw_mesh_object(teapot);
+			teapot.shader_program.release();
+
+			floor.shader_program.bind();		
+			floor.shader_program.set_uniform_value("projection_matrix", projection_matrix);
+	    floor.shader_program.set_uniform_value("view_matrix", _view_matrix);
+			floor.shader_program.set_uniform_value("light_position", light_position);
+			floor.shader_program.set_uniform_value("light_pov_matrix", light_pov_matrix);
+			floor.shader_program.set_uniform_value("texture2", depth_tex_buffer.unit_id); 
+	    draw_mesh_object(floor);
+			floor.shader_program.release();	
+		}
+#endif
 
     glfwSwapBuffers();
 
