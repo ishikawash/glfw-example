@@ -34,15 +34,12 @@ void main(void) {
 	vec3 color = kd * material.diffuse + ks * material.specular;
 #endif
 
-	vec4 _light_coord = light_coord / light_coord.w;
-	_light_coord.z += depth_bias;
-	float distance_from_light = texture2D(texture2, _light_coord.xy).z;
-	float shadow = 1.0;
-	if (light_coord.w > 0.0) {
-		shadow = distance_from_light < _light_coord.z ? 0.5 : 1.0;
-	}	
+	vec4 light_coord_normalized = light_coord / light_coord.w;
+	light_coord_normalized.z += depth_bias; // add bias to avoid depth fighting
+	float distance_from_light = texture2D(texture2, light_coord_normalized.xy).z;
+	float shadow_factor = ( (light_coord.w > 0.0) && (distance_from_light < light_coord_normalized.z) ) ? 0.5 : 1.0;
 
-	gl_FragColor = vec4(clamp(shadow * color, 0.0, 1.0), 1.0);
+	gl_FragColor = vec4(clamp(shadow_factor * color, 0.0, 1.0), 1.0);
 	// gl_FragColor = vec4(shadow, shadow, shadow, 1.0);
 }
 
