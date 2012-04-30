@@ -1,6 +1,8 @@
 #include <iostream>
 #include <fstream>
-#include <sstream>
+#include <iterator>
+#include <algorithm>
+
 #include "shader.hpp"
 
 using namespace std;
@@ -19,14 +21,10 @@ static inline bool link_ok(GLuint program_handle) {
 }
 
 static void read_source_code(const char *filepath, std::string & source_code) {
-  ifstream file(filepath);
-  stringstream ss;
-  string buf;
-  while (getline(file, buf)) {
-    ss << buf << endl;
-  }
-  source_code = ss.str();
-  file.close();
+	ifstream file(filepath);
+	file.unsetf(ios_base::skipws);
+	istream_iterator<char> first(file), last;
+	copy(first, last, back_inserter(source_code));
 }
 
 
