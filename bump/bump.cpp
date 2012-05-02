@@ -69,11 +69,15 @@ struct trackball_state_t {
 
 float camera_fovy = 30.0f;
 bool camera_zoom = false;
-int screen_width, screen_height;
+int screen_width;
+int screen_height;
 trackball_state_t *current_trackball_state;
 trackball_state_t camera_rotation;
 trackball_state_t light_rotation;
 bool light_rotation_enabled = false;
+
+glm::mat4 __projection_matrix;
+glm::mat4 __view_matrix;
 
 GLenum texture_unit_names[] = {
 	GL_TEXTURE0,
@@ -81,6 +85,7 @@ GLenum texture_unit_names[] = {
 	GL_TEXTURE2,
 	GL_TEXTURE3
 };
+
 
 glm::vec3 map_to_sphere(const trackball_state_t & tb_state, const glm::ivec2 & point)
 {
@@ -455,7 +460,7 @@ bool build_mesh_object(const mesh_t &mesh, mesh_object_t &object) {
 	return true;
 }
 
-void draw_mesh_object(const mesh_object_t & object)
+void render_object(const mesh_object_t & object)
 {
 	assert(object.shader_program != NULL);
 	
@@ -464,8 +469,14 @@ void draw_mesh_object(const mesh_object_t & object)
 	GLuint tex_coord_location = object.has_tex_coords ? object.shader_program->attribute_location("vertex_tex_coord") : 0;
 	GLuint tangent_location = object.has_tangents ? object.shader_program->attribute_location("vertex_tangent") : 0; 
 
-	glm::mat3 normal_matrix = glm::mat3(glm::transpose(glm::inverse(object.transform_matrix)));
-	object.shader_program->set_uniform_value("model_matrix", object.transform_matrix);
+	object.shader_program->set_uniform_value("projection_matrix", __projection_matrix);
+	
+	glm::mat4 view_inverse_matrix = glm::inverse(__view_matrix);
+	glm::mat4 model_view_matrix = __view_matrix * object.transform_matrix;
+	glm::mat3 normal_matrix = glm::mat3(glm::transpose(glm::inverse(model_view_matrix)));
+	object.shader_program->set_uniform_value("model_view_matrix", model_view_matrix);
+	object.shader_program->set_uniform_value("view_matrix", __view_matrix);
+	object.shader_program->set_uniform_value("view_inverse_matrix", view_inverse_matrix);
 	object.shader_program->set_uniform_value("normal_matrix", normal_matrix);
 
 	object.shader_program->set_uniform_value("material.diffuse", object.material.diffuse);
@@ -699,44 +710,42 @@ int main(int argc, char **args)
 		
 		teapot.transform_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f));
 		floor.transform_matrix = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f, 0.05f, 2.0f));
+		plane.transform_matrix = glm::scale(glm::mat4(1.0f), glm::vec3(screen_width, screen_height, 1.0f));
 		
 		//--- Render
 		glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fb_handle);
 		{
-	    glm::mat4 projection_matrix = glm::perspective(30.0f, (float) screen_width / (float) screen_height, 0.5f, 100.0f);
-			light_pov_matrix = bias * projection_matrix * light_view_matrix;
+	    __projection_matrix = glm::perspective(30.0f, (float) screen_width / (float) screen_height, 0.5f, 30.0f);
+			__view_matrix = light_view_matrix;
+			light_pov_matrix = bias * __projection_matrix * light_view_matrix;
 			
 			glClear(GL_DEPTH_BUFFER_BIT);
 			glClearDepth(1.0f);
 			glViewport(0, 0, depth_tex_width, depth_tex_height);
 			teapot.shader_program = &render_buffer_shader;
-			teapot.shader_program->bind();		
-    	teapot.shader_program->set_uniform_value("projection_matrix", projection_matrix);
-    	teapot.shader_program->set_uniform_value("view_matrix", light_view_matrix);
-			draw_mesh_object(teapot);
+			teapot.shader_program->bind();
+			render_object(teapot);
 			teapot.shader_program->release();
 			floor.shader_program = &render_buffer_shader;
-			floor.shader_program->bind();		
-    	floor.shader_program->set_uniform_value("projection_matrix", projection_matrix);
-    	floor.shader_program->set_uniform_value("view_matrix", light_view_matrix);
-    	draw_mesh_object(floor);
+			floor.shader_program->bind();
+    	render_object(floor);
 			floor.shader_program->release();		
 		}
 		glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);		
 	
 #ifdef DEPTH_BUFFER_DEBUG
 		{
+			__projection_matrix = glm::ortho(0.0f, (float)screen_width, 0.0f, (float)screen_height, 0.5f, 1.0f);
+			__view_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+			
 			glDisable(GL_DEPTH_TEST);
 			glClear(GL_COLOR_BUFFER_BIT);		
     	glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     	glViewport(0, 0, screen_width, screen_height);	
 			plane.shader_program = &rect_shader;
-			plane.shader_program->bind();		
-    	plane.shader_program->set_uniform_value("projection_matrix", glm::ortho(0.0f, (float)screen_width, 0.0f, (float)screen_height, 0.5f, 1.0f));
-    	plane.shader_program->set_uniform_value("view_matrix", glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -1.0f)));
-	  	plane.shader_program->set_uniform_value("model_matrix", glm::scale(glm::mat4(1.0f), glm::vec3(screen_width, screen_height, 1.0f)));
+			plane.shader_program->bind();	
 			plane.shader_program->set_uniform_value("texture2", depth_tex_buffer.unit_id); 
-	  	draw_mesh_object(plane);
+	  	render_object(plane);
 			plane.shader_program->release();
 			glEnable(GL_DEPTH_TEST);
 		}
@@ -750,42 +759,36 @@ int main(int argc, char **args)
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			glViewport(0, 0, screen_width, screen_height);
 
-	    glm::mat4 projection_matrix = glm::perspective(camera_fovy, (float) screen_width / (float) screen_height, 1.0f, 30.0f);
-			glm::mat4 _view_matrix = view_matrix * glm::mat4_cast(camera_rotation.orientation);
+	    __projection_matrix = glm::perspective(camera_fovy, (float) screen_width / (float) screen_height, 1.0f, 30.0f);
+			__view_matrix = view_matrix * glm::mat4_cast(camera_rotation.orientation);
 
 #ifdef USE_BUMP_MAPPING
 			teapot.shader_program = &bump_shader;
 			teapot.shader_program->bind();		
-			teapot.shader_program->set_uniform_value("projection_matrix", projection_matrix);
-	    teapot.shader_program->set_uniform_value("view_matrix", _view_matrix);
-			teapot.shader_program->set_uniform_value("light_position", light_position);
+			teapot.shader_program->set_uniform_value("light_world_position", light_position);
 			teapot.shader_program->set_uniform_value("surface_color", glm::vec3(0.7f, 0.6f, 0.18f));
 			teapot.shader_program->set_uniform_value("bump_density", 16.0f);
 			teapot.shader_program->set_uniform_value("bump_size", 0.15f);
 			teapot.shader_program->set_uniform_value("specular_factor", 0.5f);
-			draw_mesh_object(teapot);
+			render_object(teapot);
 			teapot.shader_program->release();
 #else
 			teapot.shader_program = &phong_shader;
 			teapot.shader_program->bind();		
-			teapot.shader_program->set_uniform_value("projection_matrix", projection_matrix);
-			teapot.shader_program->set_uniform_value("view_matrix", _view_matrix);
 			teapot.shader_program->set_uniform_value("light_position", light_position);
 			teapot.shader_program->set_uniform_value("light_pov_matrix", light_pov_matrix);
 			teapot.shader_program->set_uniform_value("texture1", tex.unit_id); 
 			teapot.shader_program->set_uniform_value("texture2", depth_tex_buffer.unit_id); 
-			draw_mesh_object(teapot);
+			render_object(teapot);
 			teapot.shader_program->release();
 #endif
 
 			floor.shader_program = &phong_shader;
-			floor.shader_program->bind();		
-			floor.shader_program->set_uniform_value("projection_matrix", projection_matrix);
-	    floor.shader_program->set_uniform_value("view_matrix", _view_matrix);
-			floor.shader_program->set_uniform_value("light_position", light_position);
+			floor.shader_program->bind();	
+			floor.shader_program->set_uniform_value("light_world_position", light_position);
 			floor.shader_program->set_uniform_value("light_pov_matrix", light_pov_matrix);
 			floor.shader_program->set_uniform_value("texture2", depth_tex_buffer.unit_id); 
-	    draw_mesh_object(floor);
+	    render_object(floor);
 			floor.shader_program->release();	
 		}
 #endif

@@ -9,7 +9,6 @@ struct material_t {
 
 const float depth_bias = -0.0005;
 
-uniform vec3 light_position;
 uniform material_t material;
 uniform sampler2D texture1;
 uniform sampler2D texture2;
@@ -18,11 +17,13 @@ varying vec3 position;
 varying vec3 normal;
 varying vec2 tex_coord;
 varying vec4 light_coord;
+varying vec3 light_position;
 
 void main(void) {
+	vec3 eye_direction = normalize(position);
 	vec3 light_direction = normalize(light_position - position);	
 	vec3 _normal = normalize(normal);
-	vec3 halfway = normalize(light_direction - position);
+	vec3 halfway = normalize(light_direction - eye_direction);
 	
 	float kd = max(dot(_normal, light_direction), 0.0);	
 	float ks = sign(kd) * pow(max(dot(_normal, halfway), 0.0), material.shininess);
@@ -38,7 +39,7 @@ void main(void) {
 	light_coord_normalized.z += depth_bias; // add bias to avoid depth fighting
 	float distance_from_light = texture2D(texture2, light_coord_normalized.xy).z;
 	float shadow_factor = ( (light_coord.w > 0.0) && (distance_from_light < light_coord_normalized.z) ) ? 0.5 : 1.0;
-
+	
 	gl_FragColor = vec4(clamp(shadow_factor * color, 0.0, 1.0), 1.0);
 	// gl_FragColor = vec4(shadow, shadow, shadow, 1.0);
 }
