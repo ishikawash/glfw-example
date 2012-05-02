@@ -56,7 +56,7 @@ struct mesh_object_t {
 	std::vector<texture_t> textures;
 	shader_program_t *shader_program;
 	material_t material;
-	glm::mat4 transform_matrix;
+	glm::mat4 matrix;
 };
 
 struct trackball_state_t {
@@ -472,7 +472,7 @@ void render_object(const mesh_object_t & object)
 	object.shader_program->set_uniform_value("projection_matrix", __projection_matrix);
 	
 	glm::mat4 view_inverse_matrix = glm::inverse(__view_matrix);
-	glm::mat4 model_view_matrix = __view_matrix * object.transform_matrix;
+	glm::mat4 model_view_matrix = __view_matrix * object.matrix;
 	glm::mat3 normal_matrix = glm::mat3(glm::transpose(glm::inverse(model_view_matrix)));
 	object.shader_program->set_uniform_value("model_view_matrix", model_view_matrix);
 	object.shader_program->set_uniform_value("view_matrix", __view_matrix);
@@ -708,9 +708,9 @@ int main(int argc, char **args)
 		glm::vec3 light_up(0.0f, 0.0f, 1.0f);
 		glm::mat4 light_view_matrix = glm::lookAt(light_position, light_center, light_up);
 		
-		teapot.transform_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f));
-		floor.transform_matrix = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f, 0.05f, 2.0f));
-		plane.transform_matrix = glm::scale(glm::mat4(1.0f), glm::vec3(screen_width, screen_height, 1.0f));
+		teapot.matrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f));
+		floor.matrix = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f, 0.05f, 2.0f));
+		plane.matrix = glm::scale(glm::mat4(1.0f), glm::vec3(screen_width, screen_height, 1.0f));
 		
 		//--- Render
 		glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fb_handle);
@@ -775,7 +775,7 @@ int main(int argc, char **args)
 #else
 			teapot.shader_program = &phong_shader;
 			teapot.shader_program->bind();		
-			teapot.shader_program->set_uniform_value("light_position", light_position);
+			teapot.shader_program->set_uniform_value("light_world_position", light_position);
 			teapot.shader_program->set_uniform_value("light_pov_matrix", light_pov_matrix);
 			teapot.shader_program->set_uniform_value("texture1", tex.unit_id); 
 			teapot.shader_program->set_uniform_value("texture2", depth_tex_buffer.unit_id); 
