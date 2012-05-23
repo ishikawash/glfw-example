@@ -20,13 +20,15 @@ varying vec4 light_coord;
 varying vec3 light_position;
 
 void main(void) {
-	vec3 eye_direction = normalize(position);
-	vec3 light_direction = normalize(light_position - position);	
+	vec3 eye_dir = normalize(-position);
+	vec3 light_dir = normalize(light_position - position);	
 	vec3 _normal = normalize(normal);
-	vec3 halfway = normalize(light_direction - eye_direction);
 	
-	float kd = max(dot(_normal, light_direction), 0.0);	
-	float ks = sign(kd) * pow(max(dot(_normal, halfway), 0.0), material.shininess);
+	vec3 reflection_dir = normalize(light_dir + eye_dir);
+	// vec3 reflection_dir = normalize(-reflect(light_dir, _normal));
+	
+	float kd = max(dot(_normal, light_dir), 0.0);	
+	float ks = sign(kd) * pow(max(dot(_normal, reflection_dir), 0.0), material.shininess);
 	
 #ifdef TEXTURE_UNIT_1
 	vec3 tex_color = texture2D(texture1, tex_coord).rgb;
