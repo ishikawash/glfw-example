@@ -224,7 +224,7 @@ void render() {
 	fbo->bind();
 	glFrontFace(GL_CW);
 	glViewport(0, 0, viewport.x, viewport.y);
-	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	diffuse_shader.bind();
 	diffuse_shader.set_uniform_value("light_direction", light_direction);
@@ -246,7 +246,7 @@ void render() {
 	glActiveTexture(texture_unit_1.unit_id);
 	glBindTexture(texture_unit_1.texture->target, texture_unit_1.texture->handle);
 	reflection_shader.bind();
-	reflection_shader.set_uniform_value("blend_factor", 0.6f);
+	reflection_shader.set_uniform_value("R0", 0.08f);
 	reflection_shader.set_uniform_value("viewport", viewport);
 	reflection_shader.set_uniform_value("texture0", texture_unit_0.index);
 	reflection_shader.set_uniform_value("texture1", texture_unit_1.index);
