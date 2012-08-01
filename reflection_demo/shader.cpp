@@ -171,6 +171,10 @@ void shader_program_t::set_uniform_value(const char *name, const glm::mat3 &mat)
 	glUniformMatrix3fv(uniform_location(name), 1, 0, glm::value_ptr(mat));
 }
 
+void shader_program_t::set_uniform_value(const char *name, const glm::ivec2 &v) const {
+	glUniform2iv(uniform_location(name), 1, glm::value_ptr(v));
+}
+
 void shader_program_t::set_uniform_value(const char *name, const glm::vec3 &v) const {
 	glUniform3fv(uniform_location(name), 1, glm::value_ptr(v));
 }

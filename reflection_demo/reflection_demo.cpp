@@ -27,6 +27,7 @@ struct model_t {
 	mesh_t *mesh;
 	glm::vec3 position;
 	glm::vec3 scale;
+	float angle;
 };
 
 struct camera_t {
@@ -34,10 +35,7 @@ struct camera_t {
 	glm::mat4 view_inverse_matrix;	
 };
 
-int screen_width;
-int screen_height;
-
-glm::mat4 texture_projection_matrix;
+glm::ivec2 viewport; 
 glm::vec3 light_direction;
 
 model_t teapot;
@@ -148,16 +146,18 @@ void setup_models() {
 	teapot.mesh->load_to_buffers();
 	teapot.position.y = 0.3f;
 	teapot.scale.x = teapot.scale.y = teapot.scale.z = 1.0f;
+	teapot.angle = 0.0f;
 	
 	board.mesh = new mesh_t();
 	mesh_t::read_from_file("mesh/quad.ctm", *(board.mesh));
 	board.mesh->load_to_buffers();
 	board.scale.x = board.scale.z = 1.5f;
 	board.scale.y = 1.0f;
+	board.angle = 0.0f;
 }
 
 void setup_cameras() {
-	float aspect_ratio = (float) screen_width / (float) screen_height;
+	float aspect_ratio = (float) viewport.x / (float) viewport.y;
 	glm::mat4 projection_matrix = glm::perspective(30.0f, aspect_ratio, 1.0f, 30.0f);
 	glm::mat4 view_inverse_matrix	= glm::lookAt(glm::vec3(0.0f, 1.5f, 3.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // from world to camera
 		
@@ -169,10 +169,11 @@ void setup_cameras() {
 }
 
 void render_model(const model_t &model, const camera_t &camera, const shader_program_t &shader_program) {
+	glm::mat4 rotation_matrix = glm::rotate(glm::mat4(1.0), model.angle, glm::vec3(0.0f, 1.0f, 0.0f));
 	glm::mat4 scale_matrix = glm::scale(glm::mat4(1.0), model.scale);
 	glm::mat4 translation_matrix = glm::translate(glm::mat4(1.0), model.position); // from model to world	
 	
-	glm::mat4 model_matrix = translation_matrix * scale_matrix;
+	glm::mat4 model_matrix = translation_matrix * scale_matrix * rotation_matrix;
 	glm::mat4 model_view_matrix = camera.view_inverse_matrix * model_matrix;
 	glm::mat3 normal_matrix = glm::mat3(glm::transpose(glm::inverse(model_view_matrix)));
 	
@@ -193,13 +194,11 @@ void setup() {
 
 	light_direction = glm::vec3(0.0f, -1.0f, 0.0f);
 	
-	texture_projection_matrix = glm::ortho(-0.85f, 0.85f, -0.85f, 0.85f, 1.0f, 10.0f) * glm::lookAt(glm::vec3(0.0f, 3.0f, 0.0f), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, -1.0f));
-
 	build_image_texutre(image_texture, "wood.tga");
-	build_color_texture(color_texture, screen_width, screen_height);
-	build_depth_texture(depth_texture, screen_width, screen_height);
+	build_color_texture(color_texture, viewport.x, viewport.y);
+	build_depth_texture(depth_texture, viewport.x, viewport.y);
 
-	fbo = new frame_buffer_t(screen_width, screen_height);
+	fbo = new frame_buffer_t(viewport.x, viewport.y);
 	fbo->bind();
 	fbo->attach_texture(GL_COLOR_ATTACHMENT0_EXT, color_texture);
 	fbo->attach_render_buffer(GL_DEPTH_ATTACHMENT_EXT, GL_DEPTH_COMPONENT);
@@ -224,7 +223,7 @@ void cleanup() {
 void render() {	
 	fbo->bind();
 	glFrontFace(GL_CW);
-	glViewport(0, 0, screen_width, screen_height);
+	glViewport(0, 0, viewport.x, viewport.y);
 	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	diffuse_shader.bind();
@@ -234,7 +233,7 @@ void render() {
 	fbo->release();
 
 	glFrontFace(GL_CCW);
-	glViewport(0, 0, screen_width, screen_height);
+	glViewport(0, 0, viewport.x, viewport.y);
 	glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	
 	
@@ -247,8 +246,8 @@ void render() {
 	glActiveTexture(texture_unit_1.unit_id);
 	glBindTexture(texture_unit_1.texture->target, texture_unit_1.texture->handle);
 	reflection_shader.bind();
-	reflection_shader.set_uniform_value("texture_projection_matrix", texture_projection_matrix);
 	reflection_shader.set_uniform_value("blend_factor", 0.6f);
+	reflection_shader.set_uniform_value("viewport", viewport);
 	reflection_shader.set_uniform_value("texture0", texture_unit_0.index);
 	reflection_shader.set_uniform_value("texture1", texture_unit_1.index);
 	render_model(board, default_camera, reflection_shader);
@@ -257,6 +256,8 @@ void render() {
 	glActiveTexture(0);
 
 	// debug_draw_texture(color_texture.handle);
+	
+	teapot.angle += 1.0f;
 }
 
 int main(int argc, char **args)
@@ -272,7 +273,7 @@ int main(int argc, char **args)
     glfwTerminate();
     exit(EXIT_FAILURE);
   }
-  glfwGetWindowSize(&screen_width, &screen_height);
+  glfwGetWindowSize(&viewport.x, &viewport.y);
   glfwSetWindowTitle("Teapot");
   glfwEnable(GLFW_STICKY_KEYS);
   glfwSwapInterval(1);
