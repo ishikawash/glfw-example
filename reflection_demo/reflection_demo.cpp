@@ -6,7 +6,6 @@
 #include <cassert>
 #include <fstream>
 #include <string>
-#include <sstream>
 
 #include <OpenGL/gl.h>
 #include <OpenGL/glext.h>
@@ -17,11 +16,22 @@
 #include <glm/gtx/string_cast.hpp>
 #include <openctmpp.h>
 
+#define PNG_DEBUG 3
+#include <png.h>
+
 #include "shader.hpp"
 #include "mesh.hpp"
 #include "fbo.hpp"
 #include "texture.hpp"
 
+
+struct image_t {
+	GLenum format;
+	size_t width;
+	size_t height;
+	size_t byte_depth;
+	unsigned char *data;
+};
 
 struct model_t {
 	mesh_t *mesh;
@@ -54,6 +64,14 @@ texture_unit_t texture_unit_0 = { GL_TEXTURE0, 0, &color_texture };
 texture_unit_t texture_unit_1 = { GL_TEXTURE1, 1, &image_texture };
 
 
+void log(const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  std::vfprintf(stderr, format, args);
+  std::fprintf(stderr, "\n");
+  va_end(args);
+}
+
 glm::mat4 mirror_matrix(const glm::vec3 &n, float d) {
 	glm::vec4 P = glm::vec4(n, d);
 	return glm::mat4(
@@ -62,6 +80,98 @@ glm::mat4 mirror_matrix(const glm::vec3 &n, float d) {
 			-2.0f*P.x*P.z,        -2.0f*P.y*P.z,        -2.0f*P.z*P.z + 1.0f, 0.0f,
 			-2.0f*P.x*P.w,        -2.0f*P.y*P.w,        -2.0f*P.z*P.w,        1.0f
 			);	
+}
+
+// ref: http://zarb.org/~gc/html/libpng.html
+bool read_image_from_png_file(const char *filepath, image_t &image) {
+  FILE *fp = fopen(filepath, "rb");
+  if (!fp) {
+    log("[read_png_file] File %s could not be opened for reading", filepath);
+		return false;
+	}
+
+  unsigned char header[8]; 
+  fread(header, 1, 8, fp);
+  if (png_sig_cmp(header, 0, 8)) {
+    log("[read_png_file] File %s is not recognized as a PNG file", filepath);
+		return false;
+	}
+
+  png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+  if (!png_ptr) {
+    log("[read_png_file] png_create_read_struct failed");
+		return false;
+	}
+
+  png_infop info_ptr = png_create_info_struct(png_ptr);
+  if (!info_ptr) {
+    log("[read_png_file] png_create_info_struct failed");
+		return false;
+	}
+
+  if (setjmp(png_jmpbuf(png_ptr))) {
+    log("[read_png_file] Error during init_io");
+		return false;
+	}
+
+  png_init_io(png_ptr, fp);
+  png_set_sig_bytes(png_ptr, 8);
+
+  png_read_info(png_ptr, info_ptr);
+
+  int width = png_get_image_width(png_ptr, info_ptr);
+  int height = png_get_image_height(png_ptr, info_ptr);
+  png_byte color_type = png_get_color_type(png_ptr, info_ptr);
+  png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+
+  png_set_interlace_handling(png_ptr);
+  png_read_update_info(png_ptr, info_ptr);
+
+  if (setjmp(png_jmpbuf(png_ptr))) {
+    log("[read_png_file] Error during read_image");
+		return false;
+	}
+
+	png_byte byte_depth = png_get_channels(png_ptr, info_ptr);
+	if (bit_depth == 16)
+		byte_depth *= 2;
+
+	png_byte *buf = new png_byte[width * height * byte_depth];
+
+	int offset = 0;
+  for (int y = 0; y < height; y++) {
+		png_read_row(png_ptr, buf + offset, NULL);
+		offset += width * byte_depth;
+	}
+
+	png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+	
+  fclose(fp);
+
+	image.width = width;
+	image.height = height;
+	image.byte_depth = byte_depth;
+	image.data = (unsigned char *)buf;
+
+  switch (color_type) {
+  case PNG_COLOR_TYPE_GRAY:
+		image.format = GL_LUMINANCE;
+    break;
+  case PNG_COLOR_TYPE_RGB:
+		image.format = GL_RGB;
+    break;
+  case PNG_COLOR_TYPE_RGBA:
+		image.format = GL_RGBA;
+    break;
+  case PNG_COLOR_TYPE_GA:
+		image.format = GL_LUMINANCE_ALPHA;
+    break;
+  default:
+    log("Non-support color type");
+		return false;
+  }
+
+	return true;
 }
 
 bool build_color_texture(texture_t &texture, size_t width, size_t height) {
@@ -102,13 +212,15 @@ bool build_depth_texture(texture_t &texture, size_t width, size_t height) {
 }
 
 bool build_image_texutre(texture_t &texture, const char *filepath) {
-	GLuint texture_handle;
-	
-	glGenTextures(1, &texture_handle);
-  glBindTexture(GL_TEXTURE_2D, texture_handle);
-  if (!glfwLoadTexture2D(filepath, GLFW_BUILD_MIPMAPS_BIT))
+	image_t image;
+	if (! read_image_from_png_file(filepath, image) )
 		return false;
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+
+	GLuint texture_handle;
+	glGenTextures(1, &texture_handle);
+	glBindTexture(GL_TEXTURE_2D, texture_handle);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.width, image.height, 0, GL_RGB, GL_UNSIGNED_BYTE, (GLvoid *)image.data);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
@@ -119,7 +231,6 @@ bool build_image_texutre(texture_t &texture, const char *filepath) {
 
 	return true;
 }
-
 
 void debug_draw_texture(GLuint texture_handle) {
 	glMatrixMode(GL_PROJECTION);
@@ -194,7 +305,7 @@ void setup() {
 
 	light_direction = glm::vec3(0.0f, -1.0f, 0.0f);
 	
-	build_image_texutre(image_texture, "wood.tga");
+	build_image_texutre(image_texture, "wood.png");
 	build_color_texture(color_texture, viewport.x, viewport.y);
 	build_depth_texture(depth_texture, viewport.x, viewport.y);
 
@@ -263,13 +374,13 @@ void render() {
 int main(int argc, char **args)
 {
   if (!glfwInit()) {
-    std::cerr << "Failed to initialize GLFW" << std::endl;
+		log("Failed to initialize GLFW");
     exit(EXIT_FAILURE);
   }
 
   int depth_bits = 16;
   if (!glfwOpenWindow(640, 480, 0, 0, 0, 0, depth_bits, 0, GLFW_WINDOW)) {
-    std::cerr << "Failed to open GLFW window" << std::endl;
+		log("Failed to open GLFW window");
     glfwTerminate();
     exit(EXIT_FAILURE);
   }
