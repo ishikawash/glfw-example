@@ -12,6 +12,7 @@ struct vertex_t {
 	glm::vec4 position;
 	glm::vec3 normal;
 	glm::vec2 tex_coord;
+	glm::vec3 tangent;
 };
 
 struct mesh_t {

@@ -7,6 +7,7 @@ uniform mat3 normal_matrix;
 attribute vec4 vertex_position;
 attribute vec3 vertex_normal;
 attribute vec2 vertex_tex_coord;
+attribute vec3 vertex_tangent;
 
 varying vec3 normal;
 
