@@ -11,6 +11,7 @@
 #include <OpenGL/glext.h>
 #include <GL/glfw.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/string_cast.hpp>
@@ -23,6 +24,7 @@
 #include "mesh.hpp"
 #include "fbo.hpp"
 #include "texture.hpp"
+#include "trackball.hpp"
 
 
 struct image_t {
@@ -37,15 +39,14 @@ struct model_t {
 	mesh_t *mesh;
 	glm::vec3 position;
 	glm::vec3 scale;
-	float angle;
+	glm::quat orientation;
 };
 
 struct camera_t {
 	glm::mat4 projection_matrix;
-	glm::mat4 view_inverse_matrix;	
+	glm::mat4 view_inverse_matrix;
 };
-
-glm::ivec2 viewport; 
+ 
 glm::vec3 light_direction;
 
 model_t teapot;
@@ -54,14 +55,16 @@ shader_program_t diffuse_shader;
 shader_program_t reflection_shader;
 frame_buffer_t *fbo;
 
-camera_t default_camera;
-camera_t reflection_camera;
+glm::ivec2 viewport;
+camera_t cameras[2];
 
 texture_t image_texture;
 texture_t color_texture;
 texture_t depth_texture;
 texture_unit_t texture_unit_0 = { GL_TEXTURE0, 0, &color_texture };
 texture_unit_t texture_unit_1 = { GL_TEXTURE1, 1, &image_texture };
+
+trackball_t trackball(200.0f);
 
 
 void log(const char *format, ...) {
@@ -255,16 +258,14 @@ void setup_models() {
 	teapot.mesh = new mesh_t();
 	mesh_t::read_from_file("mesh/teapot.ctm", *(teapot.mesh));
 	teapot.mesh->load_to_buffers();
-	teapot.position.y = 0.3f;
+	teapot.position.y = 0.5f;
 	teapot.scale.x = teapot.scale.y = teapot.scale.z = 1.0f;
-	teapot.angle = 0.0f;
 	
 	board.mesh = new mesh_t();
 	mesh_t::read_from_file("mesh/quad.ctm", *(board.mesh));
 	board.mesh->load_to_buffers();
 	board.scale.x = board.scale.z = 1.5f;
 	board.scale.y = 1.0f;
-	board.angle = 0.0f;
 }
 
 void setup_cameras() {
@@ -272,20 +273,20 @@ void setup_cameras() {
 	glm::mat4 projection_matrix = glm::perspective(30.0f, aspect_ratio, 1.0f, 30.0f);
 	glm::mat4 view_inverse_matrix	= glm::lookAt(glm::vec3(0.0f, 1.5f, 3.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // from world to camera
 		
-	default_camera.projection_matrix = projection_matrix;
-	default_camera.view_inverse_matrix = view_inverse_matrix;
+	cameras[0].projection_matrix = projection_matrix;
+	cameras[0].view_inverse_matrix = view_inverse_matrix;
 
-	reflection_camera.projection_matrix = projection_matrix;
-	reflection_camera.view_inverse_matrix = view_inverse_matrix * mirror_matrix(glm::vec3(0.0f, 1.0f, 0.0f), 0.0f);
+	cameras[1].projection_matrix = projection_matrix;
+	cameras[1].view_inverse_matrix = view_inverse_matrix * mirror_matrix(glm::vec3(0.0f, 1.0f, 0.0f), 0.0f);
 }
 
 void render_model(const model_t &model, const camera_t &camera, const shader_program_t &shader_program) {
-	glm::mat4 rotation_matrix = glm::rotate(glm::mat4(1.0), model.angle, glm::vec3(0.0f, 1.0f, 0.0f));
+	glm::mat4 rotation_matrix = glm::mat4_cast(model.orientation);
 	glm::mat4 scale_matrix = glm::scale(glm::mat4(1.0), model.scale);
 	glm::mat4 translation_matrix = glm::translate(glm::mat4(1.0), model.position); // from model to world	
 	
 	glm::mat4 model_matrix = translation_matrix * scale_matrix * rotation_matrix;
-	glm::mat4 model_view_matrix = camera.view_inverse_matrix * model_matrix;
+	glm::mat4 model_view_matrix = camera.view_inverse_matrix * model_matrix; 
 	glm::mat3 normal_matrix = glm::mat3(glm::transpose(glm::inverse(model_view_matrix)));
 	
 	shader_program.set_uniform_value("projection_matrix", camera.projection_matrix);
@@ -331,7 +332,7 @@ void cleanup() {
 	
 }
 
-void render() {	
+void render() {		
 	fbo->bind();
 	glFrontFace(GL_CW);
 	glViewport(0, 0, viewport.x, viewport.y);
@@ -339,7 +340,7 @@ void render() {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	diffuse_shader.bind();
 	diffuse_shader.set_uniform_value("light_direction", light_direction);
-	render_model(teapot, reflection_camera, diffuse_shader);
+	render_model(teapot, cameras[1], diffuse_shader);
 	diffuse_shader.release();
 	fbo->release();
 
@@ -349,7 +350,7 @@ void render() {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	
 	
 	diffuse_shader.bind();
-	render_model(teapot, default_camera, diffuse_shader);
+	render_model(teapot, cameras[0], diffuse_shader);
 	diffuse_shader.release();
 
 	glActiveTexture(texture_unit_0.unit_id);
@@ -361,14 +362,38 @@ void render() {
 	reflection_shader.set_uniform_value("viewport", viewport);
 	reflection_shader.set_uniform_value("texture0", texture_unit_0.index);
 	reflection_shader.set_uniform_value("texture1", texture_unit_1.index);
-	render_model(board, default_camera, reflection_shader);
+	render_model(board, cameras[0], reflection_shader);
 	reflection_shader.release();
 	glBindTexture(texture_unit_0.texture->target, 0);
 	glActiveTexture(0);
 
 	// debug_draw_texture(color_texture.handle);
+
+}
+
+void mouse_button(int button, int action) {
+	if (button != GLFW_MOUSE_BUTTON_LEFT)
+		return;
 	
-	teapot.angle += 1.0f;
+	switch (action) {
+		case GLFW_PRESS:
+			int x, y;
+     	glfwGetMousePos(&x, &y);
+			trackball.drag_start(x, y);
+			break;
+		case GLFW_RELEASE:
+			trackball.drag_end();
+			break;
+   }
+}
+
+void mouse_motion(int x, int y) {
+	trackball.rotate(teapot.orientation, x, y);
+	trackball.drag_update(x, y);	
+}
+
+void resize(int width, int height) {
+	trackball.center(0.5 * width, 0.5 * height);
 }
 
 int main(int argc, char **args)
@@ -388,6 +413,10 @@ int main(int argc, char **args)
   glfwSetWindowTitle("Teapot");
   glfwEnable(GLFW_STICKY_KEYS);
   glfwSwapInterval(1);
+
+  glfwSetMouseButtonCallback(mouse_button);
+  glfwSetMousePosCallback(mouse_motion);
+	glfwSetWindowSizeCallback(resize);
 
 	setup();
 
