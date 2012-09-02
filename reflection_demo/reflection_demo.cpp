@@ -43,6 +43,9 @@ struct model_t {
 };
 
 struct camera_t {
+	float fovy;
+	float aspect_ratio;
+	
 	glm::mat4 projection_matrix;
 	glm::mat4 view_inverse_matrix;
 };
@@ -65,6 +68,7 @@ texture_unit_t texture_unit_0 = { GL_TEXTURE0, 0, &color_texture };
 texture_unit_t texture_unit_1 = { GL_TEXTURE1, 1, &image_texture };
 
 trackball_t trackball(200.0f);
+bool camera_zoom = false;
 
 
 void log(const char *format, ...) {
@@ -269,15 +273,21 @@ void setup_models() {
 }
 
 void setup_cameras() {
+	float fovy = 30.0f;
 	float aspect_ratio = (float) viewport.x / (float) viewport.y;
-	glm::mat4 projection_matrix = glm::perspective(30.0f, aspect_ratio, 1.0f, 30.0f);
+	
+	glm::mat4 projection_matrix = glm::perspective(fovy, aspect_ratio, 1.0f, 30.0f);
 	glm::mat4 view_inverse_matrix	= glm::lookAt(glm::vec3(0.0f, 1.5f, 3.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // from world to camera
 		
 	cameras[0].projection_matrix = projection_matrix;
 	cameras[0].view_inverse_matrix = view_inverse_matrix;
+	cameras[0].fovy = fovy;
+	cameras[0].aspect_ratio = aspect_ratio;
 
 	cameras[1].projection_matrix = projection_matrix;
 	cameras[1].view_inverse_matrix = view_inverse_matrix * mirror_matrix(glm::vec3(0.0f, 1.0f, 0.0f), 0.0f);
+	cameras[1].fovy = fovy;
+	cameras[1].aspect_ratio = aspect_ratio;
 }
 
 void render_model(const model_t &model, const camera_t &camera, const shader_program_t &shader_program) {
@@ -332,7 +342,11 @@ void cleanup() {
 	
 }
 
-void render() {		
+void render() {
+	for (int i = 0; i < 2; i++) {
+		cameras[i].projection_matrix = glm::perspective(cameras[i].fovy, cameras[i].aspect_ratio, 1.0f, 30.0f);
+	}	
+			
 	fbo->bind();
 	glFrontFace(GL_CW);
 	glViewport(0, 0, viewport.x, viewport.y);
@@ -388,11 +402,40 @@ void mouse_button(int button, int action) {
 }
 
 void mouse_motion(int x, int y) {
-	trackball.rotate(teapot.orientation, x, y);
+	if (! trackball.dragged()) 
+		return;
+	
+	if (camera_zoom) {
+		float delta = glm::clamp(0.5f * trackball.direction(x, y).y, -0.5f, 0.5f);
+		for (int i = 0; i < 2; i++) {
+			cameras[i].fovy += delta;
+		}		
+	} else {
+		trackball.rotate(teapot.orientation, x, y);
+	}
+		
 	trackball.drag_update(x, y);	
 }
 
+void keyboard(int key, int action) {
+  switch (action) {
+  case GLFW_PRESS:
+    if (key == GLFW_KEY_LSHIFT) {
+      camera_zoom = true;
+		}
+    break;
+  case GLFW_RELEASE:
+		if (key == GLFW_KEY_LSHIFT) {
+    	camera_zoom = false;
+		}
+    break;
+  }
+}
+
 void resize(int width, int height) {
+	viewport.x = width;
+	viewport.y = height;
+	
 	trackball.center(0.5 * width, 0.5 * height);
 }
 
@@ -409,11 +452,11 @@ int main(int argc, char **args)
     glfwTerminate();
     exit(EXIT_FAILURE);
   }
-  glfwGetWindowSize(&viewport.x, &viewport.y);
   glfwSetWindowTitle("Teapot");
   glfwEnable(GLFW_STICKY_KEYS);
   glfwSwapInterval(1);
 
+	glfwSetKeyCallback(keyboard);
   glfwSetMouseButtonCallback(mouse_button);
   glfwSetMousePosCallback(mouse_motion);
 	glfwSetWindowSizeCallback(resize);

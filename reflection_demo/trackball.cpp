@@ -22,6 +22,13 @@ void trackball_t::drag_end() {
 	}
 }
 
+glm::vec2 trackball_t::direction(int x, int y) {
+	ivec2 drag_end_position(x - __center_position.x, y - __center_position.y);	
+	vec2 v(drag_end_position.x - __drag_start_position.x, drag_end_position.y - __drag_start_position.y);
+	v.y = -v.y;	
+	return normalize(v);
+}
+
 glm::quat& trackball_t::rotate(glm::quat &orientation, int x, int y) {
 	if (! __dragged)
 		return orientation;

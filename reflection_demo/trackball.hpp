@@ -22,8 +22,11 @@ public:
 	void drag_start(int x, int y);
 	void drag_update(int x, int y);
 	void drag_end();
+	bool dragged() const { return __dragged; }
 	
-	glm::quat& rotate(glm::quat &orientation, int x, int y);	
+	glm::quat& rotate(glm::quat &orientation, int x, int y);
+	
+	glm::vec2 direction(int x, int y);
 	
 	void center(float x, float y) {
 		__center_position.x = x;
