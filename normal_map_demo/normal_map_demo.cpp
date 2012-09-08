@@ -52,6 +52,7 @@ struct camera_t {
 };
  
 glm::vec4 light_position;
+glm::vec2 parallax_scale_bias;
 
 model_t teapot;
 model_t board;
@@ -63,15 +64,18 @@ camera_t camera;
 
 texture_t image_texture;
 texture_t normal_texture;
+texture_t height_texture;
 texture_t color_texture;
 texture_t depth_texture;
 texture_unit_t texture_unit_0 = { GL_TEXTURE0, 0, &color_texture };
 texture_unit_t texture_unit_1 = { GL_TEXTURE1, 1, &image_texture };
 texture_unit_t texture_unit_2 = { GL_TEXTURE2, 2, &normal_texture };
+texture_unit_t texture_unit_3 = { GL_TEXTURE3, 3, &height_texture };
 
 trackball_t trackball(200.0f);
-bool camera_zoom = false;
 
+bool camera_zoom = false;
+bool parallax_mapping_enabled = true;
 
 void log(const char *format, ...) {
   va_list args;
@@ -232,6 +236,7 @@ bool build_image_texutre(texture_t &texture, const char *filepath) {
 }
 
 void debug_draw_texture(GLuint texture_handle) {
+	glEnable(GL_TEXTURE_2D);
 	glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
   glMatrixMode(GL_MODELVIEW);
@@ -272,17 +277,21 @@ void camera_setup() {
 void shader_setup() {		
 	light_position = glm::vec4(10.0f, 10.0f, 0.0f, 1.0f); // in world space
 	
+	parallax_scale_bias.r = 0.02f;
+	parallax_scale_bias.g = 0.01f;
+	
 	shader_program_t::build(normal_map_shader, "assets/shader/normal_map.vs", "assets/shader/normal_map.fs");	
 	normal_map_shader.bind();
-	normal_map_shader.set_uniform_value("texcoord_scale", 3.0f);
-	normal_map_shader.set_uniform_value("specular_color", glm::vec3(0.6f));
-	normal_map_shader.set_uniform_value("specular_power", 50.0f);
+	normal_map_shader.set_uniform_value("texcoord_scale", 1.0f);
+	normal_map_shader.set_uniform_value("specular_color", glm::vec3(0.3f));
+	normal_map_shader.set_uniform_value("specular_power", 100.0f);
 	normal_map_shader.release();
 }
 
 void texture_setup() {
-	build_image_texutre(image_texture, "assets/image/grunge.png");
-	build_image_texutre(normal_texture, "assets/image/grunge_normal.png");
+	build_image_texutre(image_texture, "assets/image/polkadots.png");
+	build_image_texutre(normal_texture, "assets/image/polkadots_normal.png");
+	build_image_texutre(height_texture, "assets/image/polkadots_height.png");
 	
 	build_color_texture(color_texture, viewport.x, viewport.y);
 	build_depth_texture(depth_texture, viewport.x, viewport.y);
@@ -325,7 +334,6 @@ void setup() {
 	frame_buffer_setup();
 	shader_setup();
 	
-	glEnable(GL_TEXTURE_2D);
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);	
 	glCullFace(GL_BACK);	
@@ -335,10 +343,12 @@ void cleanup() {
 	
 }
 
-void render() {
+void update() {
 	camera.projection_matrix = glm::perspective(camera.fovy, camera.aspect_ratio, 1.0f, 30.0f);
-	camera.view_inverse_matrix = glm::lookAt(glm::vec3(0.0f, 1.5f, 3.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)) * glm::mat4_cast(camera.orientation);
+	camera.view_inverse_matrix = glm::lookAt(glm::vec3(0.0f, 1.5f, 3.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)) * glm::mat4_cast(camera.orientation);	
+}
 
+void render() {
 	glViewport(0, 0, viewport.x, viewport.y);
 	glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	
@@ -347,9 +357,16 @@ void render() {
 	glBindTexture(texture_unit_1.texture->target, texture_unit_1.texture->handle);
 	glActiveTexture(texture_unit_2.unit_id);
 	glBindTexture(texture_unit_2.texture->target, texture_unit_2.texture->handle);
+	glActiveTexture(texture_unit_3.unit_id);
+	glBindTexture(texture_unit_3.texture->target, texture_unit_3.texture->handle);
 	normal_map_shader.bind();
+	if (parallax_mapping_enabled)
+		normal_map_shader.set_uniform_value("scale_bias", parallax_scale_bias);
+	else
+		normal_map_shader.set_uniform_value("scale_bias", glm::vec2(0.0f));
 	normal_map_shader.set_uniform_value("texture1", texture_unit_1.index);
 	normal_map_shader.set_uniform_value("texture2", texture_unit_2.index);
+	normal_map_shader.set_uniform_value("texture3", texture_unit_3.index);
 	normal_map_shader.set_uniform_value("light_position", camera.view_inverse_matrix * light_position);
 	render_model(board, camera, normal_map_shader);
 	normal_map_shader.release();
@@ -396,6 +413,9 @@ void keyboard(int key, int action) {
     if (key == GLFW_KEY_LSHIFT) {
       camera_zoom = true;
 		}
+		if (key == GLFW_KEY_SPACE) {
+			parallax_mapping_enabled = !parallax_mapping_enabled;
+		}
     break;
   case GLFW_RELEASE:
 		if (key == GLFW_KEY_LSHIFT) {
@@ -437,6 +457,7 @@ int main(int argc, char **args)
 	setup();
 
   do {
+		update();
 		render();						
     glfwSwapBuffers();
   }

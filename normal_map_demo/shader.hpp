@@ -63,6 +63,7 @@ public:
 	void set_uniform_value(const char *name, int value) const;
 	void set_uniform_value(const char *name, float value) const;
 	void set_uniform_value(const char *name, const glm::ivec2 &v) const;
+	void set_uniform_value(const char *name, const glm::vec2 &v) const;
 	void set_uniform_value(const char *name, const glm::vec3 &v) const;
 	void set_uniform_value(const char *name, const glm::vec4 &v) const;
 	void set_uniform_value(const char *name, const glm::mat3 &mat) const;

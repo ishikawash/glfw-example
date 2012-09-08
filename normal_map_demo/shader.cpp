@@ -175,6 +175,10 @@ void shader_program_t::set_uniform_value(const char *name, const glm::ivec2 &v) 
 	glUniform2iv(uniform_location(name), 1, glm::value_ptr(v));
 }
 
+void shader_program_t::set_uniform_value(const char *name, const glm::vec2 &v) const {
+	glUniform2fv(uniform_location(name), 1, glm::value_ptr(v));
+}
+
 void shader_program_t::set_uniform_value(const char *name, const glm::vec3 &v) const {
 	glUniform3fv(uniform_location(name), 1, glm::value_ptr(v));
 }
