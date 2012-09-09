@@ -26,7 +26,6 @@
 #include "texture.hpp"
 #include "trackball.hpp"
 
-
 struct image_t {
 	GLenum format;
 	size_t width;
@@ -67,10 +66,6 @@ texture_t normal_texture;
 texture_t height_texture;
 texture_t color_texture;
 texture_t depth_texture;
-texture_unit_t texture_unit_0 = { GL_TEXTURE0, 0, &color_texture };
-texture_unit_t texture_unit_1 = { GL_TEXTURE1, 1, &image_texture };
-texture_unit_t texture_unit_2 = { GL_TEXTURE2, 2, &normal_texture };
-texture_unit_t texture_unit_3 = { GL_TEXTURE3, 3, &height_texture };
 
 trackball_t trackball(200.0f);
 
@@ -277,24 +272,33 @@ void camera_setup() {
 void shader_setup() {		
 	light_position = glm::vec4(10.0f, 10.0f, 0.0f, 1.0f); // in world space
 	
-	parallax_scale_bias.r = 0.02f;
-	parallax_scale_bias.g = 0.01f;
+	parallax_scale_bias.r = 0.04f;
+	parallax_scale_bias.g = 0.02f;
 	
 	shader_program_t::build(normal_map_shader, "assets/shader/normal_map.vs", "assets/shader/normal_map.fs");	
 	normal_map_shader.bind();
 	normal_map_shader.set_uniform_value("texcoord_scale", 1.0f);
+	normal_map_shader.set_uniform_value("texture1", 1);
+	normal_map_shader.set_uniform_value("texture2", 2);
+	normal_map_shader.set_uniform_value("texture3", 3);
 	normal_map_shader.set_uniform_value("specular_color", glm::vec3(0.3f));
 	normal_map_shader.set_uniform_value("specular_power", 100.0f);
 	normal_map_shader.release();
 }
 
-void texture_setup() {
+void texture_setup() {	
 	build_image_texutre(image_texture, "assets/image/polkadots.png");
 	build_image_texutre(normal_texture, "assets/image/polkadots_normal.png");
 	build_image_texutre(height_texture, "assets/image/polkadots_height.png");
 	
 	build_color_texture(color_texture, viewport.x, viewport.y);
 	build_depth_texture(depth_texture, viewport.x, viewport.y);
+	
+	texture_unit_t::initialize();
+	texture_unit_t::attach(0, &color_texture);
+	texture_unit_t::attach(1, &image_texture);
+	texture_unit_t::attach(2, &normal_texture);
+	texture_unit_t::attach(3, &height_texture);
 }
 
 void frame_buffer_setup() {
@@ -349,31 +353,28 @@ void update() {
 }
 
 void render() {
+	for (size_t i = 0; i < texture_unit_t::collection.size(); i++) {
+		texture_unit_t::collection[i].activate();
+	}
+	
 	glViewport(0, 0, viewport.x, viewport.y);
 	glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	
 
-	glActiveTexture(texture_unit_1.unit_id);
-	glBindTexture(texture_unit_1.texture->target, texture_unit_1.texture->handle);
-	glActiveTexture(texture_unit_2.unit_id);
-	glBindTexture(texture_unit_2.texture->target, texture_unit_2.texture->handle);
-	glActiveTexture(texture_unit_3.unit_id);
-	glBindTexture(texture_unit_3.texture->target, texture_unit_3.texture->handle);
 	normal_map_shader.bind();
 	if (parallax_mapping_enabled)
 		normal_map_shader.set_uniform_value("scale_bias", parallax_scale_bias);
 	else
 		normal_map_shader.set_uniform_value("scale_bias", glm::vec2(0.0f));
-	normal_map_shader.set_uniform_value("texture1", texture_unit_1.index);
-	normal_map_shader.set_uniform_value("texture2", texture_unit_2.index);
-	normal_map_shader.set_uniform_value("texture3", texture_unit_3.index);
 	normal_map_shader.set_uniform_value("light_position", camera.view_inverse_matrix * light_position);
 	render_model(board, camera, normal_map_shader);
 	normal_map_shader.release();
-	glBindTexture(texture_unit_0.texture->target, 0);
-	glActiveTexture(0);
 
 	// debug_draw_texture(color_texture.handle);
+
+	for (size_t i = 0; i < texture_unit_t::collection.size(); i++) {
+		texture_unit_t::collection[i].deactivate();
+	}
 
 }
 
