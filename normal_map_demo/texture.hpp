@@ -43,4 +43,6 @@ struct texture_unit_t {
 	
 };
 
+#define TEXTURE_UNITS  texture_unit_t::collection
+
 #endif

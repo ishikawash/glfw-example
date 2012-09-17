@@ -277,7 +277,7 @@ void shader_setup() {
 	
 	shader_program_t::build(normal_map_shader, "assets/shader/normal_map.vs", "assets/shader/normal_map.fs");	
 	normal_map_shader.bind();
-	normal_map_shader.set_uniform_value("texcoord_scale", 1.0f);
+	normal_map_shader.set_uniform_value("texcoord_scale", 2.0f);
 	normal_map_shader.set_uniform_value("texture1", 1);
 	normal_map_shader.set_uniform_value("texture2", 2);
 	normal_map_shader.set_uniform_value("texture3", 3);
@@ -353,8 +353,8 @@ void update() {
 }
 
 void render() {
-	for (size_t i = 0; i < texture_unit_t::collection.size(); i++) {
-		texture_unit_t::collection[i].activate();
+	for (size_t i = 0; i < TEXTURE_UNITS.size(); i++) {
+		TEXTURE_UNITS[i].activate();
 	}
 	
 	glViewport(0, 0, viewport.x, viewport.y);
@@ -372,8 +372,8 @@ void render() {
 
 	// debug_draw_texture(color_texture.handle);
 
-	for (size_t i = 0; i < texture_unit_t::collection.size(); i++) {
-		texture_unit_t::collection[i].deactivate();
+	for (size_t i = 0; i < TEXTURE_UNITS.size(); i++) {
+		TEXTURE_UNITS[i].deactivate();
 	}
 
 }
